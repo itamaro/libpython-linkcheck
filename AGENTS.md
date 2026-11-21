@@ -81,8 +81,10 @@ Actions. It copies the checkout to a scratch directory, installs the package
   test on macOS does not validate these changes.
 - Packaging (`pyproject.toml`, `MANIFEST.in`, `ci/*`, workflows): `make dist`
   and `make test-linux`.
-- Docs only: `make lint` (and `make dist` if README changes, since it is the
-  PyPI long description checked by `twine check --strict`).
+- Docs only: `make lint`. If README changes, also `make dist` (it is the
+  PyPI long description checked by `twine check --strict`) and
+  `make test-linux`: `tests/test_readme.py` runs the README's "Try it" block
+  and compares the result with its "Expected output" block, so keep them in sync.
 - Release commits: everything in "Release procedure" below.
 
 ## CI expectations

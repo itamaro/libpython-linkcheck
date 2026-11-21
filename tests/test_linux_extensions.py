@@ -201,3 +201,20 @@ def test_extension_in_a_package_reports_qualified_name(py, exts, tmp_path):
     assert r.returncode == 0, r.stderr
     (line,) = r.link_warnings
     assert f"extension module 'pkg.linked_ext' links directly to libpython: {dest} " in line
+
+
+def test_spec_from_file_location(py, exts):
+    code = (
+        ENABLE
+        + f"""
+import importlib.util
+spec = importlib.util.spec_from_file_location("renamed.linked_ext", {str(exts.linked.path)!r})
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+print(module.hello())
+"""
+    )
+    r = py(code, "-W", "error::RuntimeWarning")
+    assert r.returncode == 1
+    assert r.ctor == []
+    assert "LibpythonLinkWarning: extension module 'renamed.linked_ext'" in r.stderr
