@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.1.0a2 (2026-11-21)
 
 Second alpha: a C implementation, native wheels, an embedding API, and opt-in
