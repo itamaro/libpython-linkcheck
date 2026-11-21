@@ -9,11 +9,16 @@ from __future__ import annotations
 
 import os
 import sys
+from types import SimpleNamespace
 
 import pytest
 from extbuild import IS_LINUX, BuildError, Exts, build_fixtures
 
+from libpython_linkcheck import _elf
+
 REQUIRE_LINUX = os.environ.get("LINKCHECK_REQUIRE_LINUX") == "1"
+#: Set by ci/run-tests.sh unless testing a pure-Python wheel.
+REQUIRE_NATIVE = os.environ.get("LINKCHECK_REQUIRE_NATIVE") == "1"
 
 _skipped: list[str] = []
 
@@ -52,3 +57,39 @@ def exts(tmp_path_factory: pytest.TempPathFactory) -> Exts:
         if REQUIRE_LINUX:
             pytest.fail(f"could not build fixture extensions:\n{e}")
         pytest.skip(f"could not build fixture extensions: {e}")
+
+
+def _implementations() -> list[str]:
+    if _elf._native is not None or REQUIRE_NATIVE:
+        return ["python", "native"]
+    return ["python"]
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    if _elf._native is not None or REQUIRE_NATIVE:
+        return
+    keep, drop = [], []
+    for item in items:
+        (drop if item.get_closest_marker("requires_native") else keep).append(item)
+    if drop:
+        config.hook.pytest_deselected(items=drop)
+        items[:] = keep
+
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    if "impl" in metafunc.fixturenames:
+        metafunc.parametrize("impl", _implementations(), indirect=True)
+
+
+@pytest.fixture
+def impl(request: pytest.FixtureRequest) -> SimpleNamespace:
+    """One reader implementation: ``impl.read_needed`` and ``impl.is_libpython``."""
+    if request.param == "python":
+        return SimpleNamespace(
+            name="python", read_needed=_elf.py_read_needed, is_libpython=_elf.py_is_libpython
+        )
+    if _elf._native is None:
+        pytest.fail("LINKCHECK_REQUIRE_NATIVE=1 but libpython_linkcheck._native is not built")
+    return SimpleNamespace(
+        name="native", read_needed=_elf._native_read_needed, is_libpython=_elf._native.is_libpython
+    )

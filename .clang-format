@@ -1,0 +1,16 @@
+# C style for src/libpython_linkcheck/_native and tests (PEP 7 flavored).
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 99
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+  BeforeElse: true
+BreakAfterReturnType: TopLevelDefinitions
+PointerAlignment: Right
+IndentCaseLabels: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+MacroBlockBegin: "^Py_BEGIN_ALLOW_THREADS$"
+MacroBlockEnd: "^Py_END_ALLOW_THREADS$"

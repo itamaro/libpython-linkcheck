@@ -21,7 +21,14 @@ from pathlib import Path
 
 DIST_NAME = "libpython-linkcheck"
 PROJECT = "libpython_linkcheck"
-SDIST_REQUIRED_TOP = ["pyproject.toml", "README.md", "LICENSE", "MANIFEST.in", "PKG-INFO"]
+SDIST_REQUIRED_TOP = [
+    "pyproject.toml",
+    "setup.py",
+    "README.md",
+    "LICENSE",
+    "MANIFEST.in",
+    "PKG-INFO",
+]
 SDIST_FORBIDDEN_PREFIXES = [".github/", ".git/", "CLAUDE.md", "AGENTS.md", "Makefile", "ci/"]
 
 
@@ -93,10 +100,11 @@ def check_wheel(repo: Path, wheel: Path, version: str) -> None:
         dist_info = f"{PROJECT}-{version}.dist-info"
         for path in tracked_files(repo, f"src/{PROJECT}"):
             arcname = path.removeprefix("src/")
-            if arcname.endswith((".c", ".h")):
-                continue
             if arcname not in names:
                 fail(f"{wheel.name} is missing {arcname}")
+        sources = sorted(n for n in names if n.endswith((".c", ".h")))
+        if sources:
+            fail(f"{wheel.name} contains C sources: {sources}")
         stray = sorted(n for n in names if not n.startswith((f"{PROJECT}/", f"{dist_info}/")))
         if stray:
             fail(f"{wheel.name} contains files outside the package: {stray}")

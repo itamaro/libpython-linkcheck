@@ -11,6 +11,10 @@
 #                            directory (default: a scratch copy of this checkout)
 #   LINKCHECK_REQUIRE_LINUX  set to 1 to fail unless running on Linux with no
 #                            skipped tests (the Linux suite sets this)
+#   LINKCHECK_REQUIRE_NATIVE 1 (default) to require the C implementation;
+#                            defaults to 0 when PACKAGE is a pure-Python wheel
+#   CFLAGS                   extra C flags; -Werror is always added when the
+#                            C extension is compiled from source
 #
 # Extra arguments are passed to pytest. The exit status is pytest's.
 set -eu
@@ -38,6 +42,15 @@ else
     package=$work/src
 fi
 
+case "$package" in
+    *-py3-none-any.whl) : "${LINKCHECK_REQUIRE_NATIVE:=0}" ;;
+    *) : "${LINKCHECK_REQUIRE_NATIVE:=1}" ;;
+esac
+export LINKCHECK_REQUIRE_NATIVE
+# Compiler warnings in the C implementation are errors in every test build.
+CFLAGS="${CFLAGS:-} -Werror"
+export CFLAGS
+
 "$python" -m venv "$work/venv"
 venv_python=$work/venv/bin/python
 pip() { "$venv_python" -m pip --disable-pip-version-check -q "$@"; }
@@ -55,7 +68,9 @@ import libpython_linkcheck
 where = libpython_linkcheck.__file__
 if "site-packages" not in where:
     sys.exit(f"libpython_linkcheck imported from {where}, not the installed copy")
-print(f"Testing libpython_linkcheck {libpython_linkcheck.__version__} from {where}")
+from libpython_linkcheck import _elf
+print(f"Testing libpython_linkcheck {libpython_linkcheck.__version__} from {where}"
+      f" ({_elf.IMPLEMENTATION} implementation)")
 print(f"Python {sys.version} on {sys.platform}")
 EOF
 

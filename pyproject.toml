@@ -36,7 +36,7 @@ Issues = "https://github.com/itamaro/libpython-linkcheck/issues"
 
 [dependency-groups]
 test = ["pytest==9.2.0"]
-lint = ["ruff==0.17.6"]
+lint = ["ruff==0.17.6", "clang-format==23.1.5"]
 dist = ["build==1.6.1", "twine==7.0.0"]
 dev = [
     { include-group = "test" },
@@ -49,6 +49,8 @@ version = { attr = "libpython_linkcheck._version.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["libpython_linkcheck*"]
+namespaces = false
 
 [tool.setuptools.package-data]
 libpython_linkcheck = ["py.typed"]
@@ -59,6 +61,7 @@ testpaths = ["tests"]
 pythonpath = ["tests"]
 addopts = ["-ra", "--strict-markers", "--strict-config", "--import-mode=importlib"]
 xfail_strict = true
+markers = ["requires_native: needs the C implementation; deselected when it is not built"]
 filterwarnings = ["error"]
 
 [tool.ruff]

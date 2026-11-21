@@ -10,11 +10,13 @@ LINUX_VARIANT ?= trixie
 # the source tree, e.g. `make test-linux PACKAGE=dist/foo.whl`.
 PACKAGE ?=
 RUFF ?= uv run --isolated --only-group lint ruff
+CLANG_FORMAT ?= uv run --isolated --only-group lint clang-format
+C_SOURCES = $(wildcard src/csrc/*.[ch] tests/fixtures/*.c tests/native/*.c)
 
 .PHONY: help check lint format test test-linux dist verify-pypi clean
 
 help:
-	@echo "make lint        Ruff lint + format check"
+	@echo "make lint        Ruff lint + format check, clang-format check"
 	@echo "make format      Apply Ruff formatting and safe fixes"
 	@echo "make test        Run the test suite with \$$PYTHON on this machine"
 	@echo "make test-linux  Run the required Linux suite in Podman ($(LINUX_PYTHONS))"
@@ -27,10 +29,12 @@ check: lint test test-linux dist
 lint:
 	$(RUFF) check .
 	$(RUFF) format --check .
+	$(CLANG_FORMAT) --dry-run --Werror $(C_SOURCES)
 
 format:
 	$(RUFF) check --fix .
 	$(RUFF) format .
+	$(CLANG_FORMAT) -i $(C_SOURCES)
 
 test:
 	PYTHON=$(PYTHON) PACKAGE=$(PACKAGE) sh ci/run-tests.sh

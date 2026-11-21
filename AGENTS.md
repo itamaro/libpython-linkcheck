@@ -12,8 +12,20 @@ Keep this guide current: any commit that changes a workflow documented here
 - Goal: warn when a Python extension module about to be imported has a
   `DT_NEEDED` entry naming libpython (extensions should not link libpython
   on Linux; the interpreter provides those symbols).
-- Layout: `src/libpython_linkcheck/` (package), `tests/` (pytest),
+- Layout: `src/libpython_linkcheck/` (package), `src/csrc/` (C sources,
+  shipped in the sdist only), `tests/` (pytest),
   `ci/` (scripts shared by `make` and GitHub Actions), `.github/workflows/`.
+- Two implementations of the same behavior:
+  - C (`src/csrc/`): `linkcheck_elf.[ch]` is plain
+    C99 + POSIX (no `Python.h`) so embedders can compile it;
+    `_nativemodule.c` is the `libpython_linkcheck._native` extension.
+    Built by `setup.py` on POSIX unless `LIBPYTHON_LINKCHECK_PURE=1`.
+  - Pure Python (`_elf.py`, `_hook.py`): the fallback when `_native` is not
+    built (the `py3-none-any` wheel) and the oracle for differential tests.
+  Any behavior change must be made in both; `tests/test_native.py` compares
+  them on a fuzzed corpus, in-process and in an ASan/UBSan-built harness.
+- C style: `.clang-format` (checked by `make lint`). Test builds compile the
+  C code with `-Wall -Wextra -Wshadow -Wstrict-prototypes -Werror`.
 - Supported: CPython 3.11 (oldest) through 3.15 (newest), Linux/ELF.
   Tests must cover the oldest and newest supported versions.
 - License: MIT (`LICENSE`). Build backend: setuptools (PEP 517, `pyproject.toml`).
@@ -59,19 +71,22 @@ All targets work from a fresh checkout. Every target exits non-zero on failure.
 
 | Command | What it does |
 | --- | --- |
-| `make lint` | `ruff check` + `ruff format --check` (Ruff version pinned in `pyproject.toml`) |
+| `make lint` | `ruff check`, `ruff format --check`, and `clang-format --dry-run --Werror` on all C sources (versions pinned in `pyproject.toml`) |
 | `make format` | Apply Ruff fixes and formatting |
 | `make test` | Native run on this machine: fresh venv, install the package, pytest. `PYTHON=python3.15 make test` to pick an interpreter. Linux-only tests skip on macOS. |
 | `make test-linux` | **The required Linux suite.** Runs `ci/run-tests.sh` inside `python:<ver>-trixie` containers for the oldest and newest supported Python (`LINUX_PYTHONS="3.11 3.15"`). Builds the C fixtures inside the container. Sets `LINKCHECK_REQUIRE_LINUX=1`, which turns any skipped test into a failure. |
 | `make test-linux LINUX_PYTHONS=3.13` | Same, for specific versions. |
 | `make test-linux PACKAGE=dist/<file>` | Run the Linux suite against a built wheel or sdist instead of the source tree. |
-| `make dist` | `ci/build-dist.sh`: build sdist, then the wheel from the sdist, `twine check --strict`, `ci/check_dist.py` content/metadata checks, and install-and-import smoke tests of each artifact from outside the checkout. |
+| `make dist` | `ci/build-dist.sh`: build the sdist, then the pure-Python wheel from the sdist (`LIBPYTHON_LINKCHECK_PURE=1`), `twine check --strict`, `ci/check_dist.py` content/metadata checks, and install-and-import smoke tests of each artifact from outside the checkout (installing the sdist compiles the C implementation). |
 | `make check` | `lint` + `test` + `test-linux` + `dist`. |
 | `make verify-pypi VERSION=<v>` | Post-release: install `<v>` from production PyPI in fresh containers and run the README demo. |
 
 `ci/run-tests.sh` is the single test entry point for `make` and GitHub
 Actions. It copies the checkout to a scratch directory, installs the package
 (non-editable) into a fresh venv, and runs pytest against the *installed* copy.
+It adds `-Werror` to `CFLAGS` and sets `LINKCHECK_REQUIRE_NATIVE=1` (the C
+implementation must be importable and is tested) unless `PACKAGE` is the
+pure-Python wheel.
 
 ### Which checks to run before committing
 

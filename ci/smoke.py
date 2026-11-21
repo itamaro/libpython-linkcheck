@@ -5,6 +5,7 @@ test-only dependency.
 """
 
 import importlib.metadata
+import os
 import sys
 import sysconfig
 from pathlib import Path
@@ -21,4 +22,10 @@ version = importlib.metadata.version("libpython-linkcheck")
 if libpython_linkcheck.__version__ != version:
     sys.exit(f"__version__ {libpython_linkcheck.__version__!r} != metadata {version!r}")
 
-print(f"smoke OK: libpython-linkcheck {version} at {location.parent}")
+from libpython_linkcheck import _elf  # noqa: E402
+
+expected = os.environ.get("LINKCHECK_EXPECT_IMPLEMENTATION")
+if expected and expected != _elf.IMPLEMENTATION:
+    sys.exit(f"implementation is {_elf.IMPLEMENTATION!r}, expected {expected!r}")
+
+print(f"smoke OK: libpython-linkcheck {version} ({_elf.IMPLEMENTATION}) at {location.parent}")

@@ -26,13 +26,16 @@ tools=$work/tools/bin/python
 
 if [ "${SKIP_BUILD:-0}" != 1 ]; then
     rm -rf "$outdir"
-    "$tools" -m build --outdir "$outdir" "$repo"
+    # The wheel built here is the pure-Python one (py3-none-any), for
+    # platforms without a native wheel; Linux wheels come from cibuildwheel.
+    LIBPYTHON_LINKCHECK_PURE=1 "$tools" -m build --outdir "$outdir" "$repo"
 fi
 
 "$tools" -m twine check --strict "$outdir"/*
 "$tools" "$repo/ci/check_dist.py" "$repo" "$outdir"
 
-# Smoke-test each artifact in its own venv, from a directory outside the
+# Smoke-test each artifact in its own venv (installing the sdist compiles
+# the C implementation), from a directory outside the
 # checkout, with -I so neither the CWD nor PYTHON* variables leak in.
 for artifact in "$outdir"/*.whl "$outdir"/*.tar.gz; do
     name=$(basename "$artifact")
@@ -40,6 +43,11 @@ for artifact in "$outdir"/*.whl "$outdir"/*.tar.gz; do
     rm -rf "$work/smoke"
     "$python" -m venv "$work/smoke"
     "$work/smoke/bin/python" -m pip --disable-pip-version-check -q install "$artifact"
-    (cd "$work" && "$work/smoke/bin/python" -I "$repo/ci/smoke.py")
+    case "$name" in
+        *-py3-none-any.whl) expect=python ;;
+        *.tar.gz) expect=native ;; # built from source on this POSIX host
+        *) expect=native ;;
+    esac
+    (cd "$work" && LINKCHECK_EXPECT_IMPLEMENTATION=$expect "$work/smoke/bin/python" -I "$repo/ci/smoke.py")
 done
 echo "dist OK: $(ls "$outdir" | tr '\n' ' ')"

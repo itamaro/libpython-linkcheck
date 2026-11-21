@@ -51,13 +51,37 @@ class NotELFError(ELFError):
     """The file does not start with the ELF magic number."""
 
 
-def is_libpython(needed: str) -> bool:
+def py_is_libpython(needed: str) -> bool:
     """Return True if a DT_NEEDED entry names a libpython shared library.
 
     Entries containing a path (``/usr/lib/libpython3.12.so.1.0``) are matched
     on their final component.
     """
     return _LIBPYTHON_RE.fullmatch(needed.rpartition("/")[2]) is not None
+
+
+def py_read_needed(path: str | os.PathLike[str] | os.PathLike[bytes] | bytes) -> list[str]:
+    """Pure-Python implementation of :func:`read_needed`."""
+    with open(path, "rb") as f:
+        return _read_needed(f)
+
+
+def _native_read_needed(path: str | os.PathLike[str] | os.PathLike[bytes] | bytes) -> list[str]:
+    status, value = _native.read_needed(path)
+    if status == 0:
+        return value
+    if status == 2:
+        raise NotELFError(value)
+    raise ELFError(value)
+
+
+try:
+    from . import _native  # type: ignore[attr-defined]
+except ImportError:
+    _native = None
+
+#: "native" when the C implementation is in use, else "python".
+IMPLEMENTATION = "python" if _native is None else "native"
 
 
 def read_needed(path: str | os.PathLike[str] | os.PathLike[bytes] | bytes) -> list[str]:
@@ -67,8 +91,20 @@ def read_needed(path: str | os.PathLike[str] | os.PathLike[bytes] | bytes) -> li
     Raises :class:`NotELFError` if the file is not ELF, :class:`ELFError` if it
     is malformed, and :class:`OSError` if it cannot be read.
     """
-    with open(path, "rb") as f:
-        return _read_needed(f)
+    if _native is None:
+        return py_read_needed(path)
+    return _native_read_needed(path)
+
+
+def is_libpython(needed: str) -> bool:
+    """Return True if a DT_NEEDED entry names a libpython shared library.
+
+    Entries containing a path (``/usr/lib/libpython3.12.so.1.0``) are matched
+    on their final component.
+    """
+    if _native is None:
+        return py_is_libpython(needed)
+    return _native.is_libpython(needed)
 
 
 def libpython_dependencies(
