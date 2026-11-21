@@ -11,6 +11,7 @@ import os
 import sys
 
 import pytest
+from extbuild import IS_LINUX, BuildError, Exts, build_fixtures
 
 REQUIRE_LINUX = os.environ.get("LINKCHECK_REQUIRE_LINUX") == "1"
 
@@ -38,3 +39,16 @@ def pytest_terminal_summary(terminalreporter) -> None:
         terminalreporter.write_line("Skipped tests are failures in the required Linux suite:")
         for nodeid in _skipped:
             terminalreporter.write_line(f"  {nodeid}")
+
+
+@pytest.fixture(scope="session")
+def exts(tmp_path_factory: pytest.TempPathFactory) -> Exts:
+    """The real fixture extension modules, compiled once per session (Linux only)."""
+    if not IS_LINUX:
+        pytest.skip("real ELF extension fixtures are only built on Linux")
+    try:
+        return build_fixtures(tmp_path_factory.mktemp("exts"))
+    except BuildError as e:
+        if REQUIRE_LINUX:
+            pytest.fail(f"could not build fixture extensions:\n{e}")
+        pytest.skip(f"could not build fixture extensions: {e}")

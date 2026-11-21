@@ -3,20 +3,17 @@
 from __future__ import annotations
 
 import os
-import re
 import shutil
-import subprocess
 import sys
 import sysconfig
 from pathlib import Path
 
 import pytest
 from elfbuild import DT_SONAME, ElfSpec, build_elf, dynamic_offset
+from extbuild import IS_LINUX, readelf_needed
 
 from libpython_linkcheck import ELFError, libpython_dependencies
 from libpython_linkcheck._elf import NotELFError, is_libpython, read_needed
-
-IS_LINUX = sys.platform.startswith("linux")
 
 
 def write(tmp_path: Path, data: bytes, name: str = "obj.so") -> Path:
@@ -178,13 +175,6 @@ def test_is_not_libpython(name):
 
 
 # --- real objects, checked against binutils' readelf ---------------------------------------
-
-
-def readelf_needed(path: str) -> list[str]:
-    out = subprocess.run(
-        ["readelf", "--dynamic", "--wide", path], capture_output=True, text=True, check=True
-    ).stdout
-    return re.findall(r"\(NEEDED\)\s+Shared library: \[(.*)\]", out)
 
 
 def real_objects() -> list[str]:
