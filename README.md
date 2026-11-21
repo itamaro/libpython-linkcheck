@@ -20,7 +20,9 @@ a `LibpythonLinkWarning` if the object's own `DT_NEEDED` entries name libpython.
 pip install libpython-linkcheck
 ```
 
-The import name is `libpython_linkcheck`. It is pure Python, with no dependencies.
+The import name is `libpython_linkcheck`. It has no dependencies. On Linux
+(x86_64 and aarch64, glibc) pip installs a native wheel that runs the check
+in C; elsewhere it installs a pure-Python wheel with the same behavior.
 
 ## Usage
 
