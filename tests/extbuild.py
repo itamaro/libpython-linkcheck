@@ -16,6 +16,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 FIXTURE_SRC = Path(__file__).parent / "fixtures" / "extmod.c"
+LAUNCHER_SRC = Path(__file__).parent / "fixtures" / "launcher.c"
+#: The C sources embedders compile (shipped in the sdist, not the wheel).
+CSRC = Path(__file__).resolve().parent.parent / "src" / "csrc"
 IS_LINUX = sys.platform.startswith("linux")
 
 
@@ -95,3 +98,41 @@ def build_fixtures(outdir: Path) -> Exts:
         abi3=build("abi3_linked_ext", [*link_libpython, "-lpython3"], ("libpython3.so",)),
         unlinked=build("unlinked_ext", ["-Wl,--as-needed"], ()),
     )
+
+
+def build_launcher(outdir: Path) -> Path:
+    """Build tests/fixtures/launcher.c: a `python` that registers the embedded hook.
+
+    It compiles src/csrc/linkcheck_hook.c and linkcheck_elf.c into the
+    executable, exactly as an embedder would, and links the shared libpython.
+    """
+    cfg = sysconfig.get_config_vars()
+    if not cfg.get("Py_ENABLE_SHARED"):
+        raise BuildError("the interpreter has no shared libpython to embed")
+    libdir = cfg["LIBDIR"]
+    out = outdir / "python-linkcheck"
+    cmd = [
+        *compiler(),
+        "-O1",
+        "-std=gnu11",
+        "-Wall",
+        "-Wextra",
+        "-Wshadow",
+        "-Wstrict-prototypes",
+        "-Werror",
+        f"-I{sysconfig.get_paths()['include']}",
+        f"-I{CSRC}",
+        str(LAUNCHER_SRC),
+        str(CSRC / "linkcheck_hook.c"),
+        str(CSRC / "linkcheck_elf.c"),
+        "-o",
+        str(out),
+        f"-L{libdir}",
+        f"-Wl,-rpath,{libdir}",
+        f"-lpython{cfg['LDVERSION']}",
+        "-lm",
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if proc.returncode != 0 or proc.stderr.strip():
+        raise BuildError(f"{shlex.join(cmd)}\n{proc.stdout}{proc.stderr}")
+    return out

@@ -100,6 +100,32 @@ is 0 if no file links libpython, 1 if any does, and 2 if a file could not be
 read or is not ELF. From Python, `libpython_linkcheck.libpython_dependencies(path)`
 returns the matching entries as a list.
 
+## Embedding: a hook installed before Python starts
+
+Applications that embed CPython, and CPython distributions that build their
+own `python` executable, can register the check in C before the runtime
+starts. No Python package is imported, it covers every interpreter
+(including subinterpreters), and it works under `-I -S`:
+
+```c
+#include "libpython_linkcheck.h"
+
+int main(int argc, char **argv) {
+    if (LibpythonLinkcheck_Install() < 0) {
+        return 1;
+    }
+    return Py_BytesMain(argc, argv);
+}
+```
+
+Compile `src/csrc/linkcheck_hook.c` and `src/csrc/linkcheck_elf.c` (from the
+sdist or the repository) into the program, with `src/csrc` on the include
+path; the program links libpython as embedders do. The warning category is
+the same `libpython_linkcheck.LibpythonLinkWarning` that the package
+exposes, and a later `libpython_linkcheck.enable()` call detects the hook
+and returns `False` instead of installing a second one. See
+`src/csrc/libpython_linkcheck.h` for the exact contract.
+
 ## Try it
 
 This builds an extension that links libpython and imports it with the hook
@@ -163,8 +189,7 @@ Supported and tested:
 
 Not covered yet:
 
-- Automatic activation (`sitecustomize`, `.pth` files, or a hook installed
-  by an embedding application before `Py_Initialize()`).
+- Automatic activation from `sitecustomize` or `.pth` files.
 - Subinterpreters: a Python audit hook belongs to the interpreter that
   installed it, so `enable()` must be called in each one. This is not yet tested.
 - Free-threaded interpreters: their libpython names are recognized, but the

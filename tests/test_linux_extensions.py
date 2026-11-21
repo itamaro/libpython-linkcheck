@@ -14,7 +14,7 @@ import sysconfig
 
 import pytest
 from extbuild import IS_LINUX, Exts, readelf_needed
-from pyrun import impl_env, run_python
+from pyrun import SUBINTERPRETER_HELPER, impl_env, run_python
 
 from libpython_linkcheck._elf import is_libpython, read_needed
 
@@ -220,3 +220,38 @@ print(module.hello())
     assert r.returncode == 1
     assert r.ctor == []
     assert "LibpythonLinkWarning: extension module 'renamed.linked_ext'" in r.stderr
+
+
+def test_enable_is_per_interpreter(py, exts, hook_impl):
+    """A hook from enable() covers only its own interpreter, in either direction."""
+    path = str(exts.dir)
+    not_enabled = f"""
+import sys
+sys.path.insert(0, {path!r})
+import libpython_linkcheck
+print("sub before enable:", libpython_linkcheck.is_enabled(), flush=True)
+import linked_ext
+"""
+    enabled = f"""
+import sys
+sys.path.insert(0, {path!r})
+import libpython_linkcheck
+from libpython_linkcheck import _elf
+print("sub enable:", libpython_linkcheck.enable(), _elf.IMPLEMENTATION, flush=True)
+import abi3_linked_ext
+"""
+    code = (
+        SUBINTERPRETER_HELPER
+        + ENABLE
+        + f"run_in_subinterpreter({not_enabled!r})\n"
+        + f"run_in_subinterpreter({enabled!r})\n"
+        + "print('main still enabled:', libpython_linkcheck.is_enabled())\n"
+    )
+    r = py(code, "-W", "always")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == (
+        f"sub before enable: False\nsub enable: True {hook_impl}\nmain still enabled: True\n"
+    )
+    (line,) = r.link_warnings
+    assert "extension module 'abi3_linked_ext'" in line
+    assert r.ctor == ["linked_ext", "abi3_linked_ext"]

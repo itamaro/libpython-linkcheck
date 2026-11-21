@@ -39,6 +39,21 @@ class Result:
 STARTUP_NOTICE = "Invalid -W option ignored: invalid module name: 'libpython_linkcheck'"
 
 
+#: Runs *code* in a fresh subinterpreter of the current interpreter.
+SUBINTERPRETER_HELPER = """
+def run_in_subinterpreter(code):
+    try:
+        import _interpreters as interpreters  # 3.13+
+    except ImportError:
+        import _xxsubinterpreters as interpreters  # 3.11, 3.12
+    interp = interpreters.create()
+    try:
+        interpreters.run_string(interp, code)
+    finally:
+        interpreters.destroy(interp)
+"""
+
+
 def impl_env(hook_impl: str) -> dict[str, str]:
     """Environment that selects *hook_impl* ("python" or "native") in a child."""
     return {"LIBPYTHON_LINKCHECK_IMPLEMENTATION": "python"} if hook_impl == "python" else {}
@@ -50,6 +65,7 @@ def run_python(
     path: Sequence[Path] = (),
     workdir: Path,
     env: dict[str, str] | None = None,
+    executable: str | os.PathLike[str] = sys.executable,
 ) -> Result:
     log = workdir / "ctor.log"
     log.unlink(missing_ok=True)
@@ -61,7 +77,7 @@ def run_python(
     child_env["LINKCHECK_FIXTURE_CTOR_LOG"] = str(log)
     child_env.update(env or {})
     proc = subprocess.run(
-        [sys.executable, *flags, "-c", textwrap.dedent(code)],
+        [os.fspath(executable), *flags, "-c", textwrap.dedent(code)],
         capture_output=True,
         text=True,
         env=child_env,
