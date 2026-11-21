@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.1.0a1 (2026-11-21)
 
 First alpha. Explicit activation only; see the README for the exact scope.

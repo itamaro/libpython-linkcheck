@@ -11,7 +11,7 @@ LINUX_VARIANT ?= trixie
 PACKAGE ?=
 RUFF ?= uv run --isolated --only-group lint ruff
 
-.PHONY: help check lint format test test-linux dist clean
+.PHONY: help check lint format test test-linux dist verify-pypi clean
 
 help:
 	@echo "make lint        Ruff lint + format check"
@@ -20,6 +20,7 @@ help:
 	@echo "make test-linux  Run the required Linux suite in Podman ($(LINUX_PYTHONS))"
 	@echo "make dist        Build sdist + wheel, twine check, smoke-test both"
 	@echo "make check       lint + test + test-linux + dist"
+	@echo "make verify-pypi VERSION=x  Install x from PyPI in fresh containers, run the README demo"
 
 check: lint test test-linux dist
 
@@ -47,6 +48,9 @@ test-linux:
 
 dist:
 	PYTHON=$(PYTHON) sh ci/build-dist.sh
+
+verify-pypi:
+	VERSION=$(VERSION) PODMAN=$(PODMAN) PYTHONS="$(LINUX_PYTHONS)" sh ci/verify-pypi.sh
 
 clean:
 	rm -rf build dist src/*.egg-info .pytest_cache .ruff_cache

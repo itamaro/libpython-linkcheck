@@ -67,6 +67,7 @@ All targets work from a fresh checkout. Every target exits non-zero on failure.
 | `make test-linux PACKAGE=dist/<file>` | Run the Linux suite against a built wheel or sdist instead of the source tree. |
 | `make dist` | `ci/build-dist.sh`: build sdist, then the wheel from the sdist, `twine check --strict`, `ci/check_dist.py` content/metadata checks, and install-and-import smoke tests of each artifact from outside the checkout. |
 | `make check` | `lint` + `test` + `test-linux` + `dist`. |
+| `make verify-pypi VERSION=<v>` | Post-release: install `<v>` from production PyPI in fresh containers and run the README demo. |
 
 `ci/run-tests.sh` is the single test entry point for `make` and GitHub
 Actions. It copies the checkout to a scratch directory, installs the package
@@ -142,9 +143,14 @@ GitHub environment `pypi`. No API tokens are stored anywhere.
    and is on `main`, builds and tests the artifacts once (`dist.yml`), then the
    `publish` job (environment `pypi`) uploads those exact files. Follow it with
    `gh run watch`.
-6. Verify from a clean Linux container:
-   `pip install libpython-linkcheck==<version>` and run the README example.
-7. Post-release commit: bump `_version.py` to the next `.dev0` version.
+6. Confirm PyPI serves exactly the workflow's artifact (compare sha256 of
+   `gh run download <run-id> -n dist` with
+   `https://pypi.org/pypi/libpython-linkcheck/<version>/json`), then verify
+   from clean containers: `make verify-pypi VERSION=<version>` installs the
+   release from production PyPI (no mounts, no cache) on 3.11 and 3.15 and
+   runs the README "Try it" block.
+7. Post-release commit: bump `_version.py` to the next `.dev0` version and
+   open a new "Unreleased" section in `CHANGELOG.md`.
 
 Never re-tag or delete a published version; PyPI does not allow re-uploading
 a version. Fix forward with a new version.
