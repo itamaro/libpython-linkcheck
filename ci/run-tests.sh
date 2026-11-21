@@ -89,5 +89,9 @@ print(f"Python {sys.version} on {sys.platform}")
 EOF
 
 # -P: do not put the CWD on sys.path, so only the installed package is importable.
+# Not exec: the shell must survive pytest so its EXIT trap removes $work.
+# Under set -e a failing pytest exits the shell with pytest's status, and the
+# trap preserves it.
 cd "$work/src"
-exec "$venv_python" -P -m pytest -p no:cacheprovider tests "$@"
+# --basetemp keeps pytest's tmp_path directories inside $work as well.
+"$venv_python" -P -m pytest -p no:cacheprovider --basetemp "$work/pytest" tests "$@"
