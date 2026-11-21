@@ -14,7 +14,7 @@ import sysconfig
 
 import pytest
 from extbuild import IS_LINUX, Exts, readelf_needed
-from pyrun import run_python
+from pyrun import impl_env, run_python
 
 from libpython_linkcheck._elf import is_libpython, read_needed
 
@@ -25,9 +25,11 @@ CATEGORY = "libpython_linkcheck.LibpythonLinkWarning"
 
 
 @pytest.fixture
-def py(exts: Exts, tmp_path):
+def py(exts: Exts, tmp_path, hook_impl):
     def run(code, *flags, path=()):
-        return run_python(code, *flags, path=[*path, exts.dir], workdir=tmp_path)
+        return run_python(
+            code, *flags, path=[*path, exts.dir], workdir=tmp_path, env=impl_env(hook_impl)
+        )
 
     return run
 

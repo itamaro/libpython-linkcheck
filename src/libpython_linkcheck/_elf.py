@@ -75,10 +75,13 @@ def _native_read_needed(path: str | os.PathLike[str] | os.PathLike[bytes] | byte
     raise ELFError(value)
 
 
-try:
-    from . import _native  # type: ignore[attr-defined]
-except ImportError:
-    _native = None
+if os.environ.get("LIBPYTHON_LINKCHECK_IMPLEMENTATION") == "python":
+    _native = None  # forced pure-Python implementation (debugging/testing)
+else:
+    try:
+        from . import _native  # type: ignore[attr-defined]
+    except ImportError:
+        _native = None
 
 #: "native" when the C implementation is in use, else "python".
 IMPLEMENTATION = "python" if _native is None else "native"

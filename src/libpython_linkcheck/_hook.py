@@ -9,19 +9,36 @@ import threading
 import warnings
 from typing import Any
 
+from . import _elf
 from ._elf import libpython_dependencies
 
 #: Audit event used to ask "is a libpython-linkcheck hook installed here?".
-#: Every hook implementation appends an identifier to the list passed as the
-#: event's only argument. This lets ``enable()`` detect a hook installed by
-#: another copy of this module (or, in future, by native code) without relying
-#: on module globals.
+#: Every hook appends ``(kind, category)`` to the list passed as the event's
+#: only argument: kind is "python" (this module's hook), "native" (the C hook
+#: installed by enable()) or "embedded" (the runtime-wide C hook registered by
+#: an embedding application with LibpythonLinkcheck_Install()). This lets
+#: enable() detect any of them, and lets every hook in an interpreter share
+#: one warning category, without relying on module globals.
 PROBE_EVENT = "libpython_linkcheck.probe"
 
 _enable_lock = threading.Lock()
 
 
-class LibpythonLinkWarning(RuntimeWarning):
+def _probe() -> list[tuple[str, Any]]:
+    found: list[Any] = []
+    sys.audit(PROBE_EVENT, found)
+    # 0.1.0a1 answered with a bare "python" string.
+    return [e if isinstance(e, tuple) and len(e) == 2 else (str(e), None) for e in found]
+
+
+def _adopted_category() -> type[RuntimeWarning] | None:
+    for _, category in _probe():
+        if isinstance(category, type) and issubclass(category, RuntimeWarning):
+            return category
+    return None
+
+
+class _PyLibpythonLinkWarning(RuntimeWarning):
     """An extension module about to be loaded has a DT_NEEDED entry for libpython.
 
     Instances raised by the hook carry three attributes:
@@ -40,11 +57,21 @@ class LibpythonLinkWarning(RuntimeWarning):
 
 
 # Report the public location in tracebacks and warning filters.
-LibpythonLinkWarning.__module__ = "libpython_linkcheck"
+_PyLibpythonLinkWarning.__module__ = "libpython_linkcheck"
+_PyLibpythonLinkWarning.__qualname__ = _PyLibpythonLinkWarning.__name__ = "LibpythonLinkWarning"
+
+# One class per interpreter, shared by every hook: the C implementation keeps
+# it in the interpreter's state dict; without it, adopt the class of a hook
+# that is already installed (e.g. by an embedding application).
+LibpythonLinkWarning: type[RuntimeWarning]
+if _elf._native is not None:
+    LibpythonLinkWarning = _elf._native.category()
+else:
+    LibpythonLinkWarning = _adopted_category() or _PyLibpythonLinkWarning
 
 
-def _make_warning(module: str, filename: str, needed: list[str]) -> LibpythonLinkWarning:
-    warning = LibpythonLinkWarning(
+def _make_warning(module: str, filename: str, needed: list[str]) -> RuntimeWarning:
+    warning: Any = LibpythonLinkWarning(
         f"extension module {module!r} links directly to libpython: "
         f"{filename} has DT_NEEDED {', '.join(needed)}"
     )
@@ -78,7 +105,7 @@ def _audit_hook(event: str, args: tuple[Any, ...]) -> None:
         if len(args) == 5 and args[1] is not None and args[2] is None:
             _check_extension(args[0], args[1])
     elif event == PROBE_EVENT and args and isinstance(args[0], list):
-        args[0].append("python")
+        args[0].append(("python", LibpythonLinkWarning))
 
 
 # How -W / PYTHONWARNINGS entries can spell the category.
@@ -150,9 +177,8 @@ def _apply_dropped_warnoptions() -> None:
 
 
 def _installed_hooks() -> list[str]:
-    found: list[str] = []
-    sys.audit(PROBE_EVENT, found)
-    return found
+    """Kinds of the libpython-linkcheck hooks active in this interpreter."""
+    return [kind for kind, _ in _probe()]
 
 
 def is_enabled() -> bool:
@@ -178,7 +204,8 @@ def enable() -> bool:
     with _enable_lock:
         if is_enabled():
             return False
-        sys.addaudithook(_audit_hook)
+        native = _elf._native
+        sys.addaudithook(_audit_hook if native is None else native.audit_hook)
         if not is_enabled():
             # sys.addaudithook() silently skips the hook if an existing hook
             # raised a RuntimeError subclass for the "sys.addaudithook" event.

@@ -19,8 +19,16 @@ def ext_modules():
     return [
         Extension(
             "libpython_linkcheck._native",
-            sources=[f"{CSRC}/_nativemodule.c", f"{CSRC}/linkcheck_elf.c"],
-            depends=[f"{CSRC}/linkcheck_elf.h"],
+            sources=[
+                f"{CSRC}/_nativemodule.c",
+                f"{CSRC}/linkcheck_hook.c",
+                f"{CSRC}/linkcheck_elf.c",
+            ],
+            depends=[
+                f"{CSRC}/linkcheck_elf.h",
+                f"{CSRC}/linkcheck_hook.h",
+                f"{CSRC}/libpython_linkcheck.h",
+            ],
             extra_compile_args=["-Wall", "-Wextra", "-Wshadow", "-Wstrict-prototypes"],
         )
     ]

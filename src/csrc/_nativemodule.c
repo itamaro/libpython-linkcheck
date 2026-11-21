@@ -8,6 +8,7 @@
 #include <errno.h>
 
 #include "linkcheck_elf.h"
+#include "linkcheck_hook.h"
 
 PyDoc_STRVAR(read_needed_doc,
              "read_needed(path, /)\n--\n\n"
@@ -83,7 +84,35 @@ native_is_libpython(PyObject *Py_UNUSED(module), PyObject *name)
     return PyBool_FromLong(result);
 }
 
+PyDoc_STRVAR(audit_hook_doc, "audit_hook(event, args, /)\n--\n\n"
+                             "The libpython-linkcheck audit hook, for sys.addaudithook().");
+
+static PyObject *
+native_audit_hook(PyObject *Py_UNUSED(module), PyObject *const *args, Py_ssize_t nargs)
+{
+    if (nargs != 2 || !PyUnicode_Check(args[0])) {
+        PyErr_SetString(PyExc_TypeError, "audit_hook(event: str, args: tuple)");
+        return NULL;
+    }
+    const char *event = PyUnicode_AsUTF8(args[0]);
+    if (event == NULL || lpc_audit(event, args[1], "native") < 0) {
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+PyDoc_STRVAR(category_doc, "category()\n--\n\n"
+                           "Return this interpreter's LibpythonLinkWarning class.");
+
+static PyObject *
+native_category(PyObject *Py_UNUSED(module), PyObject *Py_UNUSED(ignored))
+{
+    return lpc_get_category();
+}
+
 static PyMethodDef native_methods[] = {
+    {"audit_hook", (PyCFunction)(void (*)(void))native_audit_hook, METH_FASTCALL, audit_hook_doc},
+    {"category", native_category, METH_NOARGS, category_doc},
     {"read_needed", native_read_needed, METH_O, read_needed_doc},
     {"is_libpython", native_is_libpython, METH_O, is_libpython_doc},
     {NULL, NULL, 0, NULL},

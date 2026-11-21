@@ -22,8 +22,13 @@ Keep this guide current: any commit that changes a workflow documented here
     Built by `setup.py` on POSIX unless `LIBPYTHON_LINKCHECK_PURE=1`.
   - Pure Python (`_elf.py`, `_hook.py`): the fallback when `_native` is not
     built (the `py3-none-any` wheel) and the oracle for differential tests.
+  `linkcheck_hook.[ch]` is the audit hook in C, shared by `_native` (the hook
+  `enable()` installs) and the embedder entry point declared in
+  `libpython_linkcheck.h`.
   Any behavior change must be made in both; `tests/test_native.py` compares
-  them on a fuzzed corpus, in-process and in an ASan/UBSan-built harness.
+  the readers on a fuzzed corpus, in-process and in an ASan/UBSan-built
+  harness, and the subprocess behavior tests run once per implementation
+  (`LIBPYTHON_LINKCHECK_IMPLEMENTATION=python` forces the pure one).
 - C style: `.clang-format` (checked by `make lint`). Test builds compile the
   C code with `-Wall -Wextra -Wshadow -Wstrict-prototypes -Werror`.
 - Supported: CPython 3.11 (oldest) through 3.15 (newest), Linux/ELF.

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 from elfbuild import ElfSpec, build_elf
-from pyrun import STARTUP_NOTICE, run_python
+from pyrun import STARTUP_NOTICE, impl_env, run_python
 
 import libpython_linkcheck
 from libpython_linkcheck._hook import _parse_warnoption
@@ -39,8 +39,9 @@ def ext_dir(tmp_path):
 
 
 @pytest.fixture
-def py(ext_dir, tmp_path):
+def py(ext_dir, tmp_path, hook_impl):
     def run(code, *flags, path=(), env=None):
+        env = {**impl_env(hook_impl), **(env or {})}
         return run_python(code, *flags, path=[ext_dir, *path], workdir=tmp_path, env=env)
 
     return run
@@ -61,20 +62,44 @@ def test_public_api():
     assert (w.module, w.filename, w.needed) == (None, None, ())
 
 
-def test_enable_is_idempotent_and_reported(py):
+def test_enable_is_idempotent_and_reported(py, hook_impl):
     code = """
 import sys
 import libpython_linkcheck as m
+from libpython_linkcheck import _elf
 assert not m.is_enabled()
 assert m.enable() is True
 assert m.is_enabled()
 assert m.enable() is False
 found = []
 sys.audit("libpython_linkcheck.probe", found)
-print(found)
+((kind, category),) = found
+assert category is m.LibpythonLinkWarning
+print(_elf.IMPLEMENTATION, kind)
 """
     r = py(code, "-Werror")
-    assert (r.returncode, r.stdout, r.stderr) == (0, "['python']\n", "")
+    assert (r.returncode, r.stdout, r.stderr) == (0, f"{hook_impl} {hook_impl}\n", "")
+
+
+def test_category_is_shared_by_module_copies(py):
+    code = """
+import sys
+import libpython_linkcheck as first
+first.enable()
+for name in [m for m in sys.modules if m.split(".")[0] == "libpython_linkcheck"]:
+    del sys.modules[name]
+import libpython_linkcheck as second
+assert second is not first
+assert second.LibpythonLinkWarning is first.LibpythonLinkWarning
+w = second.LibpythonLinkWarning
+print(w.__module__, w.__qualname__, issubclass(w, RuntimeWarning))
+"""
+    r = py(code, "-Werror")
+    assert (r.returncode, r.stdout, r.stderr) == (
+        0,
+        "libpython_linkcheck LibpythonLinkWarning True\n",
+        "",
+    )
 
 
 def test_warns_before_loading(py, ext_dir):

@@ -39,6 +39,11 @@ class Result:
 STARTUP_NOTICE = "Invalid -W option ignored: invalid module name: 'libpython_linkcheck'"
 
 
+def impl_env(hook_impl: str) -> dict[str, str]:
+    """Environment that selects *hook_impl* ("python" or "native") in a child."""
+    return {"LIBPYTHON_LINKCHECK_IMPLEMENTATION": "python"} if hook_impl == "python" else {}
+
+
 def run_python(
     code: str,
     *flags: str,
@@ -48,7 +53,9 @@ def run_python(
 ) -> Result:
     log = workdir / "ctor.log"
     log.unlink(missing_ok=True)
-    child_env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
+    child_env = {
+        k: v for k, v in os.environ.items() if not k.startswith(("PYTHON", "LIBPYTHON_LINKCHECK_"))
+    }
     if path:
         child_env["PYTHONPATH"] = os.pathsep.join(map(str, path))
     child_env["LINKCHECK_FIXTURE_CTOR_LOG"] = str(log)

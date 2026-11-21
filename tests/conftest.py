@@ -79,6 +79,14 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     if "impl" in metafunc.fixturenames:
         metafunc.parametrize("impl", _implementations(), indirect=True)
+    if "hook_impl" in metafunc.fixturenames:
+        metafunc.parametrize("hook_impl", _implementations(), indirect=True)
+
+
+@pytest.fixture
+def hook_impl(request: pytest.FixtureRequest) -> str:
+    """Hook implementation for subprocess tests: "python" or "native"."""
+    return request.param
 
 
 @pytest.fixture
