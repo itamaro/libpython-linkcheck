@@ -11,6 +11,7 @@ LINUX_VARIANT ?= trixie
 PACKAGE ?=
 RUFF ?= uv run --isolated --only-group lint ruff
 CLANG_FORMAT ?= uv run --isolated --only-group lint clang-format
+ZIZMOR ?= uv run --isolated --only-group lint zizmor
 C_SOURCES = $(wildcard src/csrc/*.[ch] tests/fixtures/*.c tests/native/*.c)
 
 .PHONY: help check lint format test test-linux test-linux-freethreaded dist wheels verify-pypi clean
@@ -32,6 +33,7 @@ lint:
 	$(RUFF) check .
 	$(RUFF) format --check .
 	$(CLANG_FORMAT) --dry-run --Werror $(C_SOURCES)
+	$(ZIZMOR) --offline .github/workflows
 
 format:
 	$(RUFF) check --fix .

@@ -79,7 +79,7 @@ All targets work from a fresh checkout. Every target exits non-zero on failure.
 
 | Command | What it does |
 | --- | --- |
-| `make lint` | `ruff check`, `ruff format --check`, and `clang-format --dry-run --Werror` on all C sources (versions pinned in `pyproject.toml`) |
+| `make lint` | `ruff check`, `ruff format --check`, `clang-format --dry-run --Werror` on all C sources, and `zizmor --offline` on `.github/workflows` (versions pinned in the `lint` group of `pyproject.toml`) |
 | `make format` | Apply Ruff fixes and formatting |
 | `make test` | Native run on this machine: fresh venv, install the package, pytest. `PYTHON=python3.15 make test` to pick an interpreter. Linux-only tests skip on macOS. |
 | `make test-linux` | **The required Linux suite.** Runs `ci/run-tests.sh` inside `python:<ver>-trixie` containers for the oldest and newest supported Python (`LINUX_PYTHONS="3.11 3.15"`). Builds the C fixtures inside the container. Sets `LINKCHECK_REQUIRE_LINUX=1`, which turns any skipped test into a failure. |
@@ -107,7 +107,8 @@ pure-Python wheel.
   about how extensions load: `make test-linux` is mandatory, and
   `make test-linux-freethreaded` for C or threading changes. A skipped Linux
   test on macOS does not validate these changes.
-- Packaging (`pyproject.toml`, `MANIFEST.in`, `ci/*`, workflows): `make dist`,
+- Packaging (`pyproject.toml`, `MANIFEST.in`, `ci/*`, workflows): `make lint`
+  (zizmor checks the workflows), `make dist`,
   `make wheels` plus `make test-linux PACKAGE=wheelhouse` when the native
   build or wheel configuration changes,
   and `make test-linux`.
@@ -121,7 +122,7 @@ pure-Python wheel.
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request:
 
-- `lint`: Ruff check and format check.
+- `lint`: `make lint` (Ruff, clang-format, zizmor).
 - `linux`: the required Linux suite (`ci/run-tests.sh`,
   `LINKCHECK_REQUIRE_LINUX=1`) in `python:<ver>-trixie` containers for
   3.11–3.15 on x86_64, plus 3.11 and 3.15 on aarch64.
@@ -153,7 +154,10 @@ gh run watch <run-id> --exit-status
 ```
 
 Workflow conventions: actions are pinned to full commit SHAs with a version
-comment; the default token permission is `contents: read`; only the release
+comment; same-repository workflows are referenced as `$/...`, not `./...`;
+every job has a `name:` (equal to its id unless it is a matrix job);
+`${{ }}` expressions reach `run:` scripts only through `env:`;
+every granted permission carries a comment saying why; the default token permission is `contents: read`; only the release
 `publish` job gets `id-token: write`; checkouts use
 `persist-credentials: false`.
 

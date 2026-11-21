@@ -36,7 +36,7 @@ Issues = "https://github.com/itamaro/libpython-linkcheck/issues"
 
 [dependency-groups]
 test = ["pytest==9.2.0"]
-lint = ["ruff==0.17.6", "clang-format==23.1.5"]
+lint = ["ruff==0.17.6", "clang-format==23.1.5", "zizmor==1.32.0"]
 dist = ["build==1.6.1", "twine==7.0.0"]
 wheels = ["cibuildwheel==4.3.5"]
 dev = [

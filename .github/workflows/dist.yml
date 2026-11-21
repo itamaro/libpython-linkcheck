@@ -15,6 +15,7 @@ permissions:
 
 jobs:
   build:
+    name: build
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,6 +63,7 @@ jobs:
           if-no-files-found: error
 
   check:
+    name: check
     needs: [build, wheels]
     runs-on: ubuntu-24.04
     steps:
@@ -116,8 +118,10 @@ jobs:
           name: dist
           path: dist/
       - name: Run the Linux suite against the built ${{ matrix.package }}
+        env:
+          PACKAGE_KIND: ${{ matrix.package }}
         run: |
-          case "${{ matrix.package }}" in
+          case "$PACKAGE_KIND" in
             # A directory: pip picks this interpreter's native wheel.
             native-wheel) PACKAGE=dist ;;
             pure-wheel) PACKAGE=$(ls dist/*-py3-none-any.whl) ;;
