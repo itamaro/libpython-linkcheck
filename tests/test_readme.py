@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import subprocess
 import sys
 import sysconfig
@@ -37,7 +38,24 @@ def test_readme_demo(tmp_path):
     # The package under test is already installed in this interpreter's venv.
     script = "\n".join(ln for ln in script.splitlines() if not ln.startswith("pip install"))
     env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
-    env["PATH"] = os.path.dirname(sys.executable) + os.pathsep + env["PATH"]
+    # `python` is this venv's interpreter; `python3-config` must describe the
+    # same build (a venv has none, and the one on PATH may belong to a
+    # different interpreter, e.g. the GIL-enabled one next to a free-threaded
+    # build).
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    config = Path(sysconfig.get_config_var("BINDIR")) / (
+        f"python{sysconfig.get_config_var('LDVERSION')}-config"
+    )
+    # A wrapper, not a symlink: the script derives its prefix from $0.
+    wrapper = bindir / "python3-config"
+    wrapper.write_text(f'#!/bin/sh\nexec {shlex.quote(str(config))} "$@"\n')
+    wrapper.chmod(0o755)
+    env["PATH"] = os.pathsep.join([os.path.dirname(sys.executable), str(bindir), env["PATH"]])
+    if sysconfig.get_config_var("Py_GIL_DISABLED"):
+        # The demo module does not declare Py_mod_gil; keep CPython's
+        # "GIL has been enabled" notice out of the compared output.
+        env["PYTHON_GIL"] = "0"
     # stderr merged into stdout, as a terminal shows it.
     proc = subprocess.run(
         ["sh", "-e", "-c", script],

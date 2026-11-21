@@ -79,6 +79,12 @@ print(f"Testing libpython_linkcheck {libpython_linkcheck.__version__} from {wher
       f" ({_elf.IMPLEMENTATION} implementation)")
 if _elf._native is not None:
     print(f"C extension: {_elf._native.__file__}")
+import sysconfig
+if sysconfig.get_config_var("Py_GIL_DISABLED"):
+    libpython_linkcheck.enable()
+    if sys._is_gil_enabled():
+        sys.exit("importing libpython_linkcheck re-enabled the GIL")
+    print("free-threaded build: the GIL stays disabled")
 print(f"Python {sys.version} on {sys.platform}")
 EOF
 

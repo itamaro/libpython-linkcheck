@@ -197,7 +197,9 @@ exit status 1
 
 Supported and tested:
 
-- CPython 3.11 through 3.15 on Linux (x86_64 and aarch64, glibc).
+- CPython 3.11 through 3.15 on Linux (x86_64 and aarch64, glibc), and the
+  free-threaded builds of 3.14 and 3.15. Importing and enabling the
+  package keeps the GIL disabled.
 - Distributions: native `manylinux_2_28` wheels (x86_64, aarch64) for
   CPython 3.11–3.15 and free-threaded 3.14t/3.15t, which use the C
   implementation; a pure-Python `py3-none-any` wheel for every other
@@ -224,9 +226,6 @@ Supported and tested:
 
 Not covered yet:
 
-- Free-threaded interpreters: the native wheels are built and smoke-tested
-  (the GIL stays disabled, the hook blocks a linked object), but the full
-  test suite does not yet run on a free-threaded build.
 - Shared libraries opened with `ctypes` or `dlopen()` directly, and extension
   modules that were already loaded before `enable()`.
 - Other platforms: `enable()` works, but non-ELF files (Mach-O, PE) are never

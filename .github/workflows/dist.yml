@@ -125,3 +125,34 @@ jobs:
           esac
           export PACKAGE
           sh ci/run-tests.sh
+
+  test-freethreaded:
+    name: test native-wheel (${{ matrix.python }}t, ${{ matrix.arch }})
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.14", "3.15"]
+        arch: [x86_64]
+    runs-on: ubuntu-24.04
+    container: docker.io/library/python:${{ matrix.python }}-trixie
+    env:
+      LINKCHECK_REQUIRE_LINUX: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Image's CPython release
+        id: release
+        run: echo "version=$PYTHON_VERSION" >> "$GITHUB_OUTPUT"
+      - name: Cache the free-threaded build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /opt/python-ft
+          key: python-ft-${{ steps.release.outputs.version }}-${{ matrix.arch }}-${{ hashFiles('ci/build-freethreaded.sh') }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - name: Run the Linux suite against the built free-threaded wheel
+        run: PACKAGE=dist sh ci/test-freethreaded.sh

@@ -13,7 +13,7 @@ RUFF ?= uv run --isolated --only-group lint ruff
 CLANG_FORMAT ?= uv run --isolated --only-group lint clang-format
 C_SOURCES = $(wildcard src/csrc/*.[ch] tests/fixtures/*.c tests/native/*.c)
 
-.PHONY: help check lint format test test-linux dist wheels verify-pypi clean
+.PHONY: help check lint format test test-linux test-linux-freethreaded dist wheels verify-pypi clean
 
 help:
 	@echo "make lint        Ruff lint + format check, clang-format check"
@@ -22,6 +22,7 @@ help:
 	@echo "make test-linux  Run the required Linux suite in Podman ($(LINUX_PYTHONS))"
 	@echo "make dist        Build sdist + wheel, twine check, smoke-test both"
 	@echo "make check       lint + test + test-linux + dist"
+	@echo "make test-linux-freethreaded  Linux suite on a free-threaded CPython built from source (FT_PYTHON=3.15)"
 	@echo "make wheels      Build + repair native manylinux wheels for this machine's arch (cibuildwheel + Podman)"
 	@echo "make verify-pypi VERSION=x  Install x from PyPI in fresh containers, run the README demo"
 
@@ -53,6 +54,18 @@ test-linux:
 
 dist:
 	PYTHON=$(PYTHON) sh ci/build-dist.sh
+
+# The Linux suite on a free-threaded CPython of the image's exact release,
+# built from verified source once and cached in the linkcheck-python-ft volume.
+FT_PYTHON ?= 3.15
+test-linux-freethreaded:
+	$(PODMAN) run --rm --pull=missing \
+		-e LINKCHECK_REQUIRE_LINUX=1 -e PACKAGE=$(if $(PACKAGE),/src/$(PACKAGE)) \
+		-v "$(CURDIR)":/src:ro \
+		-v linkcheck-python-ft:/opt/python-ft \
+		-v linkcheck-pip-cache:/root/.cache/pip \
+		$(LINUX_IMAGE):$(FT_PYTHON)-$(LINUX_VARIANT) \
+		sh /src/ci/test-freethreaded.sh
 
 # Native wheels for the host architecture into wheelhouse/ (CI builds both).
 CIBUILDWHEEL ?= uv run --isolated --only-group wheels cibuildwheel
