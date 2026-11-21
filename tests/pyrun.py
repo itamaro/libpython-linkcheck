@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import sysconfig
 import textwrap
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -52,6 +53,31 @@ def run_in_subinterpreter(code):
     finally:
         interpreters.destroy(interp)
 """
+
+
+@dataclass(frozen=True)
+class Venv:
+    python: Path
+    site_packages: Path
+
+
+def package_parent() -> Path:
+    """The directory the package under test is imported from (site-packages)."""
+    import libpython_linkcheck  # noqa: PLC0415
+
+    return Path(libpython_linkcheck.__file__).resolve().parent.parent
+
+
+def make_venv(dest: Path) -> Venv:
+    """A fresh venv (no pip) whose site-packages can import this package.
+
+    A ``_linkcheck_tests.pth`` path entry (sorted before any activation file)
+    points at the directory the package under test was imported from.
+    """
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(dest)], check=True)
+    site = Path(sysconfig.get_path("purelib", vars={"base": str(dest), "platbase": str(dest)}))
+    (site / "_linkcheck_tests.pth").write_text(f"{package_parent()}\n")
+    return Venv(dest / "bin" / "python", site)
 
 
 def impl_env(hook_impl: str) -> dict[str, str]:

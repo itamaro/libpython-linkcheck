@@ -5,7 +5,7 @@ Usage: python ci/check_dist.py REPO_ROOT DIST_DIR [--native-wheels]
 Checks that:
 * there is exactly one sdist, and at least one wheel, named for the current version;
 * the sdist contains every file needed to build and test (all of src/ and
-  tests/, the build configuration, README and LICENSE) and nothing from
+  tests/, autoenable/, the build configuration, README and LICENSE) and nothing from
   repository-only tooling;
 * each wheel contains every package file, no tests, and correct metadata;
 * the pure-Python wheel is tagged py3-none-any;
@@ -93,6 +93,7 @@ def check_sdist(repo: Path, sdist: Path, version: str) -> None:
         names = {n[len(prefix) :] for n, m in members.items() if m.isfile()}
         required = set(SDIST_REQUIRED_TOP)
         required |= tracked_files(repo, "src") | tracked_files(repo, "tests")
+        required |= tracked_files(repo, "autoenable")
         missing = sorted(required - names)
         if missing:
             fail(f"sdist is missing: {missing}")

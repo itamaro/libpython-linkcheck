@@ -11,15 +11,11 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import sys
-import sysconfig
 from pathlib import Path
 
 import pytest
 from extbuild import IS_LINUX, build_launcher
-from pyrun import SUBINTERPRETER_HELPER, impl_env, run_python
-
-import libpython_linkcheck
+from pyrun import SUBINTERPRETER_HELPER, impl_env, make_venv, run_python
 
 pytestmark = pytest.mark.skipif(not IS_LINUX, reason="the embedded hook is tested on Linux")
 
@@ -48,13 +44,9 @@ def isolated(launcher, exts, tmp_path):
 @pytest.fixture
 def venv_launcher(launcher, tmp_path) -> Path:
     """The launcher placed in a fresh venv that can import this package."""
-    venv = tmp_path / "venv"
-    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(venv)], check=True)
-    exe = venv / "bin" / "python-linkcheck"
+    venv = make_venv(tmp_path / "venv")
+    exe = venv.python.with_name("python-linkcheck")
     shutil.copy2(launcher, exe)
-    site = Path(sysconfig.get_path("purelib", vars={"base": str(venv), "platbase": str(venv)}))
-    package_parent = Path(libpython_linkcheck.__file__).resolve().parent.parent
-    (site / "_linkcheck_tests.pth").write_text(f"{package_parent}\n")
     return exe
 
 

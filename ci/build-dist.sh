@@ -50,4 +50,22 @@ for artifact in "$outdir"/*.whl "$outdir"/*.tar.gz; do
     esac
     (cd "$work" && LINKCHECK_EXPECT_IMPLEMENTATION=$expect "$work/smoke/bin/python" -I "$repo/ci/smoke.py")
 done
+
+# The opt-in autoenable distribution: built and checked here, but kept out
+# of $outdir so the release never publishes it.
+echo "--- autoenable"
+"$tools" -m build --wheel --outdir "$work/autoenable" "$repo/autoenable"
+"$tools" "$repo/ci/check_autoenable.py" "$repo" "$work"/autoenable/*.whl
+rm -rf "$work/smoke"
+"$python" -m venv "$work/smoke"
+"$work/smoke/bin/python" -m pip --disable-pip-version-check -q install --no-index \
+    "$outdir"/*-py3-none-any.whl "$work"/autoenable/*.whl
+(cd "$work" && "$work/smoke/bin/python" -I -c '
+import sys
+assert "libpython_linkcheck" in sys.modules, "not imported at startup"
+import libpython_linkcheck
+assert libpython_linkcheck.is_enabled(), "not enabled at startup"
+assert not libpython_linkcheck.enable()
+print("autoenable smoke OK: enabled at startup on", sys.version.split()[0])
+')
 echo "dist OK: $(ls "$outdir" | tr '\n' ' ')"

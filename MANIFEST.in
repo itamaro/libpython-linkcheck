@@ -2,4 +2,6 @@
 # whole test tree, including C fixture sources, but no build products.
 recursive-include src/csrc *.c *.h
 graft tests
+# The opt-in autoenable distribution's files (used by tests/test_activation.py).
+graft autoenable
 global-exclude __pycache__ *.py[cod] *.so *.o

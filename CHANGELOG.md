@@ -15,7 +15,12 @@
 - `LibpythonLinkWarning` is one class per interpreter, shared by every hook
   and every copy of the module. A later `enable()` detects any installed
   hook, including the embedded one, and installs nothing.
-- Tested: subinterpreters (`enable()` is per interpreter; the embedded hook
+- Opt-in automatic activation: `autoenable/` builds
+  `libpython-linkcheck-autoenable` (not published), a matching `.pth` file
+  (3.11–3.14) and PEP 829 `.start` file (3.15+) that call `enable()` at
+  startup. The README documents each activation path and what it covers.
+- Tested: `sitecustomize`, `usercustomize`, the `.pth` / `.start` pair,
+  all of them combined, `-I`, `-S`, subinterpreters (`enable()` is per interpreter; the embedded hook
   covers all of them) and re-initialization after `Py_FinalizeEx()`.
 
 ## 0.1.0a1 (2026-11-21)

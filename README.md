@@ -100,6 +100,33 @@ is 0 if no file links libpython, 1 if any does, and 2 if a file could not be
 read or is not ELF. From Python, `libpython_linkcheck.libpython_dependencies(path)`
 returns the matching entries as a list.
 
+## Activating it automatically
+
+Installing `libpython-linkcheck` never activates anything by itself. To check
+every program run by an interpreter, choose one of these explicitly:
+
+| Activation | How | Covers | Not under |
+| --- | --- | --- | --- |
+| User code | `libpython_linkcheck.enable()` | the calling interpreter, from that call on | — |
+| `sitecustomize` | `sitecustomize.py` in site-packages calling `enable()` | interpreters using that site-packages (a venv's own, or the base installation's) | `-S` |
+| `usercustomize` | `usercustomize.py` in the user site directory calling `enable()` | that user's interpreters outside venvs | `-s`, `-I`, `-S`, venvs |
+| `.pth` + `.start` | install `libpython-linkcheck-autoenable` (see `autoenable/`), or copy its two files into site-packages | interpreters using that site-packages, before `sitecustomize` and user code | `-S` |
+| Executable | `LibpythonLinkcheck_Install()` in the program's `main()` (next section) | the whole runtime, including subinterpreters | — (works under `-I -S`) |
+
+Every path can be combined with the others: whichever runs first installs the
+hook, and later `enable()` calls detect it and return `False`, so each
+extension module is reported once. A hook installed by `enable()` (any of the
+first four rows) covers only the interpreter that installed it; a
+subinterpreter needs its own `enable()` call. Extension modules imported
+before activation, including by `.pth` files processed earlier, are not
+inspected.
+
+`libpython-linkcheck-autoenable` is not on PyPI; build it from the
+repository with `python -m build --wheel autoenable`. On Python 3.11–3.14 its
+`.pth` file's import line calls `enable()`; on 3.15 and later the matching
+[PEP 829](https://peps.python.org/pep-0829/) `.start` file
+(`libpython_linkcheck:enable`) does, and disables that import line.
+
 ## Embedding: a hook installed before Python starts
 
 Applications that embed CPython, and CPython distributions that build their
@@ -175,9 +202,9 @@ Supported and tested:
   CPython 3.11–3.15 and free-threaded 3.14t/3.15t, which use the C
   implementation; a pure-Python `py3-none-any` wheel for every other
   platform; and an sdist, which compiles the C implementation on POSIX.
-- An embedding application's hook installed with
-  `LibpythonLinkcheck_Install()` (see above), including under `-I -S`, in
-  subinterpreters, and combined with a later `enable()`.
+- Every activation path in [the table above](#activating-it-automatically),
+  each tested in a fresh venv against a real linked extension, alone and
+  combined.
 - Explicit activation: call `libpython_linkcheck.enable()` in each interpreter
   that should be checked; the hook it installs covers only that interpreter,
   including when it is a subinterpreter. Only extension modules imported
@@ -197,7 +224,6 @@ Supported and tested:
 
 Not covered yet:
 
-- Automatic activation from `sitecustomize` or `.pth` files.
 - Free-threaded interpreters: the native wheels are built and smoke-tested
   (the GIL stays disabled, the hook blocks a linked object), but the full
   test suite does not yet run on a free-threaded build.

@@ -13,7 +13,10 @@ Keep this guide current: any commit that changes a workflow documented here
   `DT_NEEDED` entry naming libpython (extensions should not link libpython
   on Linux; the interpreter provides those symbols).
 - Layout: `src/libpython_linkcheck/` (package), `src/csrc/` (C sources,
-  shipped in the sdist only), `tests/` (pytest),
+  shipped in the sdist only), `tests/` (pytest), `autoenable/` (the opt-in
+  `libpython-linkcheck-autoenable` distribution: a `.pth` + `.start` pair;
+  built and checked by `make dist`, never published by the release workflow;
+  its version is kept equal to `_version.py`),
   `ci/` (scripts shared by `make` and GitHub Actions), `.github/workflows/`.
 - Two implementations of the same behavior:
   - C (`src/csrc/`): `linkcheck_elf.[ch]` is plain
@@ -83,7 +86,7 @@ All targets work from a fresh checkout. Every target exits non-zero on failure.
 | `make test-linux LINUX_PYTHONS=3.13` | Same, for specific versions. |
 | `make test-linux PACKAGE=dist/<file>` | Run the Linux suite against a built wheel or sdist instead of the source tree. |
 | `make test-linux PACKAGE=wheelhouse` | Same, against a directory of wheels: pip installs the one matching each container's interpreter (`--no-index --only-binary`). |
-| `make dist` | `ci/build-dist.sh`: build the sdist, then the pure-Python wheel from the sdist (`LIBPYTHON_LINKCHECK_PURE=1`), `twine check --strict`, `ci/check_dist.py` content/metadata checks, and install-and-import smoke tests of each artifact from outside the checkout (installing the sdist compiles the C implementation). |
+| `make dist` | `ci/build-dist.sh`: build the sdist, then the pure-Python wheel from the sdist (`LIBPYTHON_LINKCHECK_PURE=1`), `twine check --strict`, `ci/check_dist.py` content/metadata checks, and install-and-import smoke tests of each artifact from outside the checkout (installing the sdist compiles the C implementation). Also builds the `autoenable/` wheel into a scratch directory, checks it (`ci/check_autoenable.py`), and checks that installing it enables the hook at startup. |
 | `make wheels` | Native wheels for the host architecture into `wheelhouse/`: cibuildwheel (pinned in the `wheels` dependency group, configured in `[tool.cibuildwheel]`) in Podman builds each CPython in `manylinux_2_28`, runs `auditwheel show`/`repair --only-plat --plat manylinux_2_28_<arch>`, and runs `ci/wheel_smoke.py` (native implementation, `_native` has no libpython `DT_NEEDED`, the GIL stays disabled on free-threaded builds, the hook blocks a synthetic linked object). On an Apple silicon Mac this builds aarch64; CI builds x86_64 too. |
 | `make check` | `lint` + `test` + `test-linux` + `dist`. |
 | `make verify-pypi VERSION=<v>` | Post-release: install `<v>` from production PyPI in fresh containers and run the README demo. |
@@ -161,8 +164,9 @@ owner `itamaro`, repository `libpython-linkcheck`, workflow `release.yml`,
 GitHub environment `pypi`. No API tokens are stored anywhere.
 
 1. Release commit: set `__version__` in `src/libpython_linkcheck/_version.py`
-   to the release version (e.g. `0.1.0a1`) and add the release notes to
-   `CHANGELOG.md`.
+   to the release version (e.g. `0.1.0a1`), set the same version (and the
+   pinned dependency) in `autoenable/pyproject.toml`, and add the release
+   notes to `CHANGELOG.md`.
 2. On that exact tree, run locally:
    ```sh
    make check
@@ -187,8 +191,9 @@ GitHub environment `pypi`. No API tokens are stored anywhere.
    from clean containers: `make verify-pypi VERSION=<version>` installs the
    release from production PyPI (no mounts, no cache) on 3.11 and 3.15 and
    runs the README "Try it" block.
-7. Post-release commit: bump `_version.py` to the next `.dev0` version and
-   open a new "Unreleased" section in `CHANGELOG.md`.
+7. Post-release commit: bump `_version.py` and `autoenable/pyproject.toml`
+   to the next `.dev0` version and open a new "Unreleased" section in
+   `CHANGELOG.md`.
 
 Never re-tag or delete a published version; PyPI does not allow re-uploading
 a version. Fix forward with a new version.
