@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- A `-W` / `PYTHONWARNINGS` entry naming `libpython_linkcheck.LibpythonLinkWarning`
+  that CPython dropped at startup is now applied with the precedence of its
+  position: later options, and filters the program installed before
+  `enable()`, still override it. Previously `enable()` put it in front of
+  every filter.
+- `enable()` also applies such entries when it finds a hook that is already
+  installed, such as one registered with `LibpythonLinkcheck_Install()`
+  (once per interpreter). The README documents which filters work with
+  the embedded hook alone.
 - Recognize libpython copies bundled into wheels by auditwheel, such as
   `libpython3-dc2fd5ae.10.so.1.0` (needed by the extensions in the
   `cohere==2.1.0` cp310 wheel), and the unversioned `libpython.so`.

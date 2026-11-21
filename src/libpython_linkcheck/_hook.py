@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import sys
@@ -113,21 +114,23 @@ _CATEGORY_NAMES = frozenset(
     {"libpython_linkcheck.LibpythonLinkWarning", "libpython_linkcheck._hook.LibpythonLinkWarning"}
 )
 _ACTIONS = ("default", "always", "all", "ignore", "module", "once", "error")
+#: Set on the (per-interpreter) category once the dropped options are applied.
+_APPLIED_MARK = "_libpython_linkcheck_warnoptions_applied"
+
+_Filter = tuple[str, Any, type, Any, int]
 
 
-def _parse_warnoption(arg: str) -> tuple[str, str, str, int] | None:
-    """Parse a -W option naming LibpythonLinkWarning like warnings._setoption does.
+def _split_warnoption(arg: str) -> tuple[str, str, str, str, int] | None:
+    """Split a -W option like warnings._setoption does, without resolving the category.
 
-    Returns (action, message regex, module regex, lineno), or None if the
-    option does not name this category or is invalid.
+    Returns (action, message regex, category name, module regex, lineno), or
+    None if the option is invalid.
     """
     parts = [s.strip() for s in arg.split(":")]
     if len(parts) > 5:
         return None
     parts += [""] * (5 - len(parts))
     action, message, category, module, lineno = parts
-    if category not in _CATEGORY_NAMES:
-        return None
     if not action:
         action = "default"
     else:
@@ -145,9 +148,78 @@ def _parse_warnoption(arg: str) -> tuple[str, str, str, int] | None:
     return (
         action,
         re.escape(message) if message else "",
+        category,
         re.escape(module) + r"\Z" if module else "",
         line,
     )
+
+
+def _parse_warnoption(arg: str) -> tuple[str, str, str, int] | None:
+    """Parse a -W option naming LibpythonLinkWarning.
+
+    Returns (action, message regex, module regex, lineno), or None if the
+    option does not name this category or is invalid.
+    """
+    split = _split_warnoption(arg)
+    if split is None or split[2] not in _CATEGORY_NAMES:
+        return None
+    action, message, _, module, lineno = split
+    return action, message, module, lineno
+
+
+def _resolve_category(name: str) -> type | None:
+    """The class a -W category names, without importing anything.
+
+    CPython imported every module it could while processing the options at
+    startup, so a category that resolved then is reachable through builtins
+    or sys.modules now.
+    """
+    if not name:
+        return Warning
+    if name in _CATEGORY_NAMES:
+        return LibpythonLinkWarning
+    module_name, _, attr = name.rpartition(".")
+    module = sys.modules.get(module_name) if module_name else sys.modules.get("builtins")
+    category = getattr(module, attr, None)
+    return category if isinstance(category, type) and issubclass(category, Warning) else None
+
+
+def _option_filter(arg: str) -> tuple[bool, _Filter] | None:
+    """(names our category?, the warnings.filters entry the option produces)."""
+    split = _split_warnoption(arg)
+    if split is None:
+        return None
+    action, message, category_name, module, lineno = split
+    category = _resolve_category(category_name)
+    if category is None:
+        return None
+    item = (
+        action,
+        re.compile(message, re.I) if message else None,
+        category,
+        re.compile(module) if module else None,
+        lineno,
+    )
+    return category_name in _CATEGORY_NAMES, item
+
+
+def _simulate(items: list[_Filter]) -> list[_Filter]:
+    """The filter list that inserting *items* in order produces (front first).
+
+    Like warnings.filterwarnings(): each item moves to the front, replacing an
+    equal entry. CPython applies -W options this way, so the last one wins.
+    """
+    out: list[_Filter] = []
+    for item in items:
+        if item in out:
+            out.remove(item)
+        out.insert(0, item)
+    return out
+
+
+def _find(filters: list[Any], block: list[_Filter]) -> int:
+    n = len(block)
+    return next((i for i in range(len(filters) - n + 1) if filters[i : i + n] == block), -1)
 
 
 def _apply_dropped_warnoptions() -> None:
@@ -157,23 +229,43 @@ def _apply_dropped_warnoptions() -> None:
     before ``site`` puts site-packages on sys.path. For a normally installed
     copy of this package that fails, and CPython prints "Invalid -W option
     ignored: invalid module name: 'libpython_linkcheck'" and drops the entry.
-    Apply such entries now, in their original order. Entries that did take
-    effect (e.g. the package was on PYTHONPATH) are left alone.
+
+    Apply such entries now, with the precedence they would have had: CPython
+    inserts the options at the front of warnings.filters in order, so each
+    one overrides the options before it. The startup options are located in
+    warnings.filters and replaced by the full set, so a recovered entry sits
+    behind later options and ahead of earlier ones. Filters the program added
+    since startup stay in front. If the startup options cannot be located
+    (there were none besides ours, or the program reset or edited the
+    filters), the recovered entries are appended, behind every existing
+    filter; CPython's default filters never match a RuntimeWarning, so this
+    still applies them unless the program has its own policy.
+
+    Runs once per interpreter. Entries that took effect at startup (the
+    package was importable before site, e.g. on PYTHONPATH) are left alone.
     """
-    for arg in sys.warnoptions:
-        parsed = _parse_warnoption(arg)
-        if parsed is None:
-            continue
-        action, message, module, lineno = parsed
-        item = (
-            action,
-            re.compile(message, re.I) if message else None,
-            LibpythonLinkWarning,
-            re.compile(module) if module else None,
-            lineno,
-        )
-        if item not in warnings.filters:
-            warnings.filterwarnings(action, message, LibpythonLinkWarning, module, lineno)
+    if getattr(LibpythonLinkWarning, _APPLIED_MARK, False):
+        return
+    entries = [e for e in map(_option_filter, sys.warnoptions) if e is not None]
+    ours = [item for is_ours, item in entries if is_ours]
+    if ours:
+        desired = _simulate([item for _, item in entries])
+        startup = _simulate([item for is_ours, item in entries if not is_ours])
+        lock = getattr(warnings, "_lock", None)  # 3.14+
+        with lock if lock is not None else contextlib.nullcontext():
+            get_filters = getattr(warnings, "_get_filters", None)
+            filters = get_filters() if get_filters is not None else warnings.filters
+            if _find(filters, desired) >= 0:
+                pass  # already in effect
+            elif startup and (pos := _find(filters, startup)) >= 0:
+                filters[pos : pos + len(startup)] = desired
+            else:
+                filters.extend(item for item in _simulate(ours) if item not in filters)
+            mutated = getattr(warnings, "_filters_mutated_lock_held", None)
+            if mutated is None:
+                mutated = warnings._filters_mutated  # type: ignore[attr-defined]
+            mutated()
+    setattr(LibpythonLinkWarning, _APPLIED_MARK, True)
 
 
 def _installed_hooks() -> list[str]:
@@ -190,25 +282,31 @@ def enable() -> bool:
     """Install the libpython-linkcheck audit hook in the current interpreter.
 
     Idempotent: if a hook is already active (installed by any earlier call,
-    including one made through a different copy of this module), nothing is
+    including one made through a different copy of this module, or by an
+    embedding application with ``LibpythonLinkcheck_Install()``), nothing is
     installed and False is returned. Returns True if this call installed it.
 
-    When it installs the hook, it also applies any ``-W`` or ``PYTHONWARNINGS``
-    entries naming ``libpython_linkcheck.LibpythonLinkWarning`` that CPython
-    could not resolve at startup (see the README).
+    The first call in an interpreter also applies any ``-W`` or
+    ``PYTHONWARNINGS`` entries naming
+    ``libpython_linkcheck.LibpythonLinkWarning`` that CPython could not
+    resolve at startup, with the precedence their position gives them (see
+    the README).
 
     Audit hooks cannot be removed, so the hook stays active for the lifetime
     of the interpreter. Raises RuntimeError if another audit hook prevented
     the installation.
     """
     with _enable_lock:
-        if is_enabled():
-            return False
-        native = _elf._native
-        sys.addaudithook(_audit_hook if native is None else native.audit_hook)
+        installed = False
         if not is_enabled():
-            # sys.addaudithook() silently skips the hook if an existing hook
-            # raised a RuntimeError subclass for the "sys.addaudithook" event.
-            raise RuntimeError("another audit hook prevented libpython-linkcheck from installing")
+            native = _elf._native
+            sys.addaudithook(_audit_hook if native is None else native.audit_hook)
+            if not is_enabled():
+                # sys.addaudithook() silently skips the hook if an existing hook
+                # raised a RuntimeError subclass for the "sys.addaudithook" event.
+                raise RuntimeError(
+                    "another audit hook prevented libpython-linkcheck from installing"
+                )
+            installed = True
         _apply_dropped_warnoptions()
-        return True
+        return installed

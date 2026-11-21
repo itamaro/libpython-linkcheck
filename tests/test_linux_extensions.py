@@ -255,3 +255,101 @@ import abi3_linked_ext
     (line,) = r.link_warnings
     assert "extension module 'abi3_linked_ext'" in line
     assert r.ctor == ["linked_ext", "abi3_linked_ext"]
+
+
+# --- -W options for our category that CPython dropped at startup -------------------
+#
+# CPython applies -W / PYTHONWARNINGS entries in order, each in front of the
+# previous ones, so the last one wins. An entry naming our category is dropped
+# at startup (site-packages is not on sys.path yet) and recovered by enable();
+# it must keep the precedence its position gives it.
+
+IMPORT_LINKED = ENABLE + "import linked_ext\n"
+
+
+def assert_loaded_silently(r):
+    assert r.returncode == 0, r.stderr
+    assert r.ctor == ["linked_ext"]
+    assert r.link_warnings == []
+    assert r.stderr_lines == []
+
+
+def assert_blocked(r):
+    assert r.returncode == 1, r.stderr
+    assert r.ctor == []  # stopped before the ELF constructor ran
+    assert r.stderr.splitlines()[-1].startswith(f"{CATEGORY}: extension module 'linked_ext' ")
+
+
+def test_later_option_overrides_recovered_category_option(py):
+    assert_loaded_silently(py(IMPORT_LINKED, "-W", f"error::{CATEGORY}", "-W", "ignore"))
+
+
+def test_recovered_category_option_overrides_earlier_option(py):
+    assert_blocked(py(IMPORT_LINKED, "-W", "ignore", "-W", f"error::{CATEGORY}"))
+
+
+@pytest.mark.parametrize(
+    ("pythonwarnings", "blocked"),
+    [(f"error::{CATEGORY},ignore", False), (f"ignore,error::{CATEGORY}", True)],
+)
+def test_pythonwarnings_order_is_preserved(exts, tmp_path, hook_impl, pythonwarnings, blocked):
+    r = run_python(
+        IMPORT_LINKED,
+        path=[exts.dir],
+        workdir=tmp_path,
+        env={**impl_env(hook_impl), "PYTHONWARNINGS": pythonwarnings},
+    )
+    if blocked:
+        assert_blocked(r)
+    else:
+        assert_loaded_silently(r)
+
+
+def test_command_line_overrides_recovered_pythonwarnings_entry(exts, tmp_path, hook_impl):
+    """PYTHONWARNINGS entries come before -W options, so -W wins."""
+    r = run_python(
+        IMPORT_LINKED,
+        "-W",
+        "ignore",
+        path=[exts.dir],
+        workdir=tmp_path,
+        env={**impl_env(hook_impl), "PYTHONWARNINGS": f"error::{CATEGORY}"},
+    )
+    assert_loaded_silently(r)
+
+
+def test_filter_installed_before_enable_overrides_recovered_option(py):
+    code = "import warnings\nwarnings.simplefilter('ignore')\n" + IMPORT_LINKED
+    assert_loaded_silently(py(code, "-W", f"error::{CATEGORY}"))
+
+
+def test_recovery_keeps_other_filters_and_is_applied_once(py, hook_impl):
+    code = """
+import sys, warnings
+before = list(warnings.filters)
+import libpython_linkcheck as m
+assert m.enable() is True
+after = list(warnings.filters)
+assert m.enable() is False
+# A fresh copy of the module finds the hook and must not apply anything again.
+for name in [n for n in sys.modules if n.split(".")[0] == "libpython_linkcheck"]:
+    del sys.modules[name]
+import libpython_linkcheck as copy
+assert copy.enable() is False
+cat = m.LibpythonLinkWarning
+ours = [f for f in after if f[2] is cat]
+print(len(ours), ours[0][0], after.index(ours[0]))
+print([f for f in after if f[2] is not cat] == before, list(warnings.filters) == after)
+"""
+    r = py(
+        code,
+        "-W",
+        f"error::{CATEGORY}",
+        "-W",
+        "ignore::DeprecationWarning",
+        "-W",
+        "error::UserWarning",
+    )
+    assert r.returncode == 0, r.stderr
+    # Behind the two later options, ahead of everything else; nothing else moved.
+    assert r.stdout == "1 error 2\nTrue True\n"

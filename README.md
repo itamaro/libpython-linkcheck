@@ -86,10 +86,15 @@ On the command line:
 during startup, before site-packages is on `sys.path`. For a normally
 installed package that fails, and CPython itself prints
 `Invalid -W option ignored: invalid module name: 'libpython_linkcheck'`.
-When `enable()` installs the hook, it applies those dropped entries, in their
-original order, so the filter does take effect for every import after
-`enable()`. These entries then take precedence over filters added before
-`enable()` was called. The other forms in the table work without this step.
+The first `enable()` call in an interpreter applies those dropped entries,
+so the filter does take effect for every import after `enable()`. Each entry
+gets the precedence its position gives it, as if CPython had applied it: an
+option later on the command line still overrides it
+(`-W error::libpython_linkcheck.LibpythonLinkWarning -W ignore` ignores the
+warning), and `PYTHONWARNINGS` entries still come before `-W` options. A
+filter the program installs before calling `enable()` (for example
+`warnings.simplefilter("ignore")`) also keeps precedence over it. The other
+forms in the table work without this step.
 
 ### Checking files without importing them
 
@@ -154,6 +159,17 @@ the same `libpython_linkcheck.LibpythonLinkWarning` that the package
 exposes, and a later `libpython_linkcheck.enable()` call detects the hook
 and returns `False` instead of installing a second one. See
 `src/csrc/libpython_linkcheck.h` for the exact contract.
+
+Warning filters work as usual, with one exception: CPython cannot resolve
+`-W error::libpython_linkcheck.LibpythonLinkWarning` (or the same entry in
+`PYTHONWARNINGS`) while the package is not importable, and drops it at
+startup. With only the embedded hook (no package installed, or `-I -S`),
+use `-W error::RuntimeWarning`, a message filter, or `-Werror` instead. If
+the package is installed and the program calls `libpython_linkcheck.enable()`
+(directly or through one of the activation paths above), that call applies
+the dropped entry once, as described in
+[Controlling the warning](#controlling-the-warning), without installing a
+second hook.
 
 ## Try it
 

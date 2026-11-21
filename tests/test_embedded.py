@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 from extbuild import IS_LINUX, build_launcher
-from pyrun import SUBINTERPRETER_HELPER, impl_env, make_venv, run_python
+from pyrun import STARTUP_NOTICE, SUBINTERPRETER_HELPER, impl_env, make_venv, run_python
 
 pytestmark = pytest.mark.skipif(not IS_LINUX, reason="the embedded hook is tested on Linux")
 
@@ -206,3 +206,78 @@ import linked_ext
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout == "hooks: ['embedded']\nhooks: ['embedded']\n"
     assert proc.stderr.count(": LibpythonLinkWarning: ") == 2, proc.stderr
+
+
+# --- -W options with the embedded hook ------------------------------------------------
+
+
+def test_isolated_runtime_warning_option_blocks_the_load(isolated):
+    """Without the package, -W error::RuntimeWarning is the way to make it an error."""
+    r = isolated("import linked_ext\n", "-W", "error::RuntimeWarning")
+    assert r.returncode == 1
+    assert r.ctor == []
+    assert r.stderr.splitlines()[-1].startswith(f"{CATEGORY}: extension module 'linked_ext' ")
+
+
+def test_isolated_category_option_cannot_be_resolved(isolated):
+    """Documented limitation: no importable package, so CPython drops the option."""
+    r = isolated("import linked_ext\n", "-W", f"error::{CATEGORY}")
+    assert r.returncode == 0, r.stderr
+    assert r.ctor == ["linked_ext"]
+    assert STARTUP_NOTICE in r.stderr.splitlines()
+    assert len(r.link_warnings) == 1
+
+
+def run_in_venv_launcher(venv_launcher, exts, tmp_path, hook_impl, code, *flags):
+    return run_python(
+        code,
+        *flags,
+        path=[exts.dir],
+        workdir=tmp_path,
+        env=impl_env(hook_impl),
+        executable=venv_launcher,
+    )
+
+
+ENABLE_THEN_IMPORT = f"""
+import sys, warnings
+import libpython_linkcheck as m
+print(m.enable(), m.enable(), flush=True)
+found = []
+sys.audit({PROBE!r}, found)
+print([kind for kind, _ in found], sum(f[2] is m.LibpythonLinkWarning for f in warnings.filters),
+      flush=True)
+import linked_ext
+"""
+
+
+def test_enable_applies_category_option_after_embedded_hook(
+    venv_launcher, exts, tmp_path, hook_impl
+):
+    r = run_in_venv_launcher(
+        venv_launcher, exts, tmp_path, hook_impl, ENABLE_THEN_IMPORT, "-W", f"error::{CATEGORY}"
+    )
+    assert r.returncode == 1, r.stderr
+    assert r.stdout == "False False\n['embedded'] 1\n"
+    assert r.ctor == []
+    assert r.stderr.splitlines()[-1].startswith(f"{CATEGORY}: extension module 'linked_ext' ")
+
+
+def test_enable_keeps_option_precedence_with_embedded_hook(
+    venv_launcher, exts, tmp_path, hook_impl
+):
+    r = run_in_venv_launcher(
+        venv_launcher,
+        exts,
+        tmp_path,
+        hook_impl,
+        ENABLE_THEN_IMPORT,
+        "-W",
+        f"error::{CATEGORY}",
+        "-W",
+        "ignore",
+    )
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == "False False\n['embedded'] 1\n"
+    assert r.ctor == ["linked_ext"]
+    assert r.link_warnings == []
