@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.0a2 (2026-11-21)
+
+Second alpha: a C implementation, native wheels, an embedding API, and opt-in
+automatic activation. See the README for the exact scope.
 
 - C implementation (`libpython_linkcheck._native`) of the `DT_NEEDED`
   reader and of the audit hook; `enable()` uses it when available. The
@@ -19,11 +22,11 @@
   `libpython-linkcheck-autoenable` (not published), a matching `.pth` file
   (3.11–3.14) and PEP 829 `.start` file (3.15+) that call `enable()` at
   startup. The README documents each activation path and what it covers.
-- Tested on free-threaded 3.14t and 3.15t, both from source and from the
-  native wheels.
-- Tested: `sitecustomize`, `usercustomize`, the `.pth` / `.start` pair,
-  all of them combined, `-I`, `-S`, subinterpreters (`enable()` is per interpreter; the embedded hook
-  covers all of them) and re-initialization after `Py_FinalizeEx()`.
+- Newly tested: free-threaded 3.14t and 3.15t (from source and from the
+  native wheels); `sitecustomize`, `usercustomize`, the `.pth` / `.start`
+  pair, and all of them combined; `-I` and `-S`; subinterpreters
+  (`enable()` is per interpreter, the embedded hook covers all of them);
+  re-initialization after `Py_FinalizeEx()`.
 
 ## 0.1.0a1 (2026-11-21)
 
