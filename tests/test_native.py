@@ -212,6 +212,17 @@ def test_total_name_size_overflow_is_detected(tmp_path):
         "/libpython3.so",
         "libpython3.1x.so",
         "libpython3.12-dbg.so",
+        "libpython3-dc2fd5ae.10.so.1.0",
+        "libpython3-dc2fd5ae",
+        "libpython3-dc2fd5ae.",
+        "libpython3-dc2fd5a",
+        "libpython3-dc2fd5ae.so",
+        "libpython-dc2fd5ae.so",
+        "libpython-dc2fd5ae.10.so",
+        "libpython-.so",
+        "libpython3-.so",
+        "libpython.so",
+        "libpython.so.1",
     ],
 )
 @native
@@ -227,4 +238,17 @@ def test_is_libpython_random_strings_match():
         name = "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 24)))
         if rng.random() < 0.5:
             name = "libpython" + name
+        assert _elf._native.is_libpython(name) == _elf.py_is_libpython(name), name
+
+
+@native
+def test_is_libpython_random_bundled_names_match():
+    """Random variations of auditwheel-renamed SONAMEs around the hash."""
+    rng = random.Random(11)
+    pieces = ["", "3", "2", "3.10", ".10", "m", "t", "-", ".so", ".1", ".0", ".", "x"]
+    hexdigits = "0123456789abcdefABg"
+    for _ in range(20000):
+        digest = "".join(rng.choice(hexdigits) for _ in range(rng.choice([7, 8, 8, 8, 9])))
+        name = "libpython" + "".join(rng.choice(pieces) for _ in range(rng.randint(0, 2)))
+        name += "-" + digest + "".join(rng.choice(pieces) for _ in range(rng.randint(0, 5)))
         assert _elf._native.is_libpython(name) == _elf.py_is_libpython(name), name

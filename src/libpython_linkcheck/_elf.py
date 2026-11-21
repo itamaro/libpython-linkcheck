@@ -40,7 +40,15 @@ _DT_STRSZ = 10
 #   libpython3.13t.so.1.0       free-threaded
 #   libpython3.12d.so, ...7m.so ABI-flagged (debug, pymalloc) builds
 #   libpython2.7.so.1.0         legacy
-_LIBPYTHON_RE = re.compile(r"libpython[0-9]+(?:\.[0-9]+)?[a-z]*\.so(?:\.[0-9]+)*")
+#   libpython.so                unversioned
+# and copies bundled into wheels by auditwheel, which inserts "-<8 hex>" at
+# the SONAME's first dot (libpython3.10.so.1.0 -> libpython3-dc2fd5ae.10.so.1.0,
+# libpython.so -> libpython-0123abcd.so).
+_LIBPYTHON_RE = re.compile(
+    r"libpython"
+    r"(?:[0-9]+(?:-[0-9a-f]{8})?(?:\.[0-9]+)?[a-z]*|-[0-9a-f]{8})?"
+    r"\.so(?:\.[0-9]+)*"
+)
 
 
 class ELFError(ValueError):

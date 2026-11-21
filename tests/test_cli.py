@@ -49,6 +49,18 @@ def test_errors_take_precedence(objs, bad):
     assert r.stderr.startswith(f"{bad}: error: ")
 
 
+def test_bundled_libpython_copy_is_reported(tmp_path):
+    """Regression: cohere==2.1.0's _tokenizer extensions need an auditwheel-renamed copy."""
+    needed = "libpython3-dc2fd5ae.10.so.1.0"
+    path = tmp_path / "_tokenizer.cpython-310-x86_64-linux-gnu.so"
+    path.write_bytes(
+        build_elf(ElfSpec(needed=[b"tokenizer_go-8fc0f82a.so", needed.encode(), b"libc.so.6"]))
+    )
+    r = cli(path, cwd=tmp_path)
+    assert (r.returncode, r.stderr) == (1, "")
+    assert r.stdout == f"{path}: DT_NEEDED {needed}\n"
+
+
 def test_usage_error(tmp_path):
     r = cli(cwd=tmp_path)
     assert r.returncode == 2

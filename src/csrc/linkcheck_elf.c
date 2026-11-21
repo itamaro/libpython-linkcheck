@@ -436,9 +436,23 @@ is_digit(char c)
     return c >= '0' && c <= '9';
 }
 
+/* The 8 lowercase hex digits auditwheel inserts into bundled SONAMEs. */
+static int
+is_hash8(const char *s)
+{
+    for (int i = 0; i < 8; i++) {
+        if (!(is_digit(s[i]) || (s[i] >= 'a' && s[i] <= 'f'))) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 int
 lpc_is_libpython(const char *name)
 {
+    /* Same grammar as _LIBPYTHON_RE in _elf.py:
+       libpython ( DIGITS [-HASH8] [.DIGITS] [a-z]* | -HASH8 )? .so (.DIGITS)* */
     const char *base = strrchr(name, '/');
     const char *s = base ? base + 1 : name;
 
@@ -446,20 +460,31 @@ lpc_is_libpython(const char *name)
         return 0;
     }
     s += 9;
-    if (!is_digit(*s)) {
-        return 0;
-    }
-    while (is_digit(*s)) {
-        s++;
-    }
-    if (s[0] == '.' && is_digit(s[1])) {
-        s++;
+    if (is_digit(*s)) {
         while (is_digit(*s)) {
             s++;
         }
+        if (*s == '-') {
+            if (!is_hash8(s + 1)) {
+                return 0;
+            }
+            s += 9;
+        }
+        if (s[0] == '.' && is_digit(s[1])) {
+            s++;
+            while (is_digit(*s)) {
+                s++;
+            }
+        }
+        while (*s >= 'a' && *s <= 'z') {
+            s++;
+        }
     }
-    while (*s >= 'a' && *s <= 'z') {
-        s++;
+    else if (*s == '-') {
+        if (!is_hash8(s + 1)) {
+            return 0;
+        }
+        s += 9;
     }
     if (strncmp(s, ".so", 3) != 0) {
         return 0;

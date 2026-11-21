@@ -220,8 +220,10 @@ Supported and tested:
   dependencies are not inspected.
 - libpython names recognized: versioned (`libpython3.12.so.1.0`,
   `libpython3.12.so`), Stable ABI (`libpython3.so`), free-threaded
-  (`libpython3.13t.so.1.0`), and ABI-flagged (`libpython3.12d.so.1.0`)
-  names, including entries that carry a directory.
+  (`libpython3.13t.so.1.0`), ABI-flagged (`libpython3.12d.so.1.0`), and
+  unversioned (`libpython.so`) names, copies of them bundled into a wheel
+  by auditwheel (`libpython3-dc2fd5ae.10.so.1.0`), and entries that carry
+  a directory. Diagnostics show the entry exactly as it appears.
 - Standard warning filters, `-Werror`, and `catch_warnings()`.
 - Objects that cannot be read or parsed are skipped silently, so that
   CPython's own loader reports the real error.

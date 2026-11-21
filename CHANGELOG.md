@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Recognize libpython copies bundled into wheels by auditwheel, such as
+  `libpython3-dc2fd5ae.10.so.1.0` (needed by the extensions in the
+  `cohere==2.1.0` cp310 wheel), and the unversioned `libpython.so`.
 ## 0.1.0a2 (2026-11-21)
 
 Second alpha: a C implementation, native wheels, an embedding API, and opt-in

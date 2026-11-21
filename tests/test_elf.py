@@ -147,6 +147,16 @@ def test_needed_offset_outside_strtab(impl, tmp_path):
         "libpython3.16.so.1.0",
         "/usr/local/lib/libpython3.12.so.1.0",
         "../lib/libpython3.so",
+        # Bundled by auditwheel: "-<8 hex>" inserted at the first dot.
+        "libpython3-dc2fd5ae.10.so.1.0",  # cohere==2.1.0, cp310 manylinux wheel
+        "cohere.libs/libpython3-dc2fd5ae.10.so.1.0",
+        "libpython3-0123abcd.so",
+        "libpython3-0123abcd.6m.so.1.0",
+        "libpython3-0123abcd.13t.so.1.0",
+        "libpython-0123abcd.so",
+        "libpython3.10.so.1.0",  # genicam==1.6.0
+        "libpython3.6m.so.1.0",  # scanpy==0.4.4
+        "libpython.so",  # unversioned
     ],
 )
 def test_is_libpython(impl, name):
@@ -157,8 +167,17 @@ def test_is_libpython(impl, name):
     "name",
     [
         "libc.so.6",
-        "libpython.so",
         "libpythonista.so",
+        "libpython_helpers.so",
+        "libpython3.10.so.backup",
+        "libpython3-dc2fd5a.10.so.1.0",  # 7 hex digits
+        "libpython3-dc2fd5ae0.10.so.1.0",  # 9
+        "libpython3-DC2FD5AE.10.so.1.0",  # auditwheel's hashes are lowercase
+        "libpython3-dc2fd5ag.10.so.1.0",
+        "libpython3.10-dc2fd5ae.so.1.0",  # hash after the first dot
+        "libpython-0123abcd3.so",
+        "libpython3-0123abcd-0123abcd.so",
+        "libcrypt-796a3fb8.so.2",
         "libpython3.12.a",
         "libpython3.12.so.bak",
         "libpython3-c.so",
