@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- C implementation (`libpython_linkcheck._native`) of the `DT_NEEDED`
+  reader and of the audit hook; `enable()` uses it when available. The
+  pure-Python implementation remains the fallback and is tested against the
+  C one (fuzzed corpus, also under ASan/UBSan).
+  `LIBPYTHON_LINKCHECK_IMPLEMENTATION=python` forces the pure-Python one.
+- Native `manylinux_2_28` wheels for x86_64 and aarch64 (CPython 3.11–3.15,
+  plus free-threaded 3.14t and 3.15t), alongside the pure-Python wheel.
+- Embedding API: `LibpythonLinkcheck_Install()` (`src/csrc/libpython_linkcheck.h`)
+  registers a runtime-wide hook before Python starts. It covers every
+  interpreter, needs no Python package, and works under `-I -S`.
+- `LibpythonLinkWarning` is one class per interpreter, shared by every hook
+  and every copy of the module. A later `enable()` detects any installed
+  hook, including the embedded one, and installs nothing.
+- Tested: subinterpreters (`enable()` is per interpreter; the embedded hook
+  covers all of them) and re-initialization after `Py_FinalizeEx()`.
+
 ## 0.1.0a1 (2026-11-21)
 
 First alpha. Explicit activation only; see the README for the exact scope.

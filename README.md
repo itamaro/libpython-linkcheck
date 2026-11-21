@@ -166,14 +166,22 @@ linked.cpython-315-x86_64-linux-gnu.so: DT_NEEDED libpython3.15.so.1.0
 exit status 1
 ```
 
-## What the 0.1.0a1 alpha supports
+## What is supported
 
 Supported and tested:
 
 - CPython 3.11 through 3.15 on Linux (x86_64 and aarch64, glibc).
+- Distributions: native `manylinux_2_28` wheels (x86_64, aarch64) for
+  CPython 3.11–3.15 and free-threaded 3.14t/3.15t, which use the C
+  implementation; a pure-Python `py3-none-any` wheel for every other
+  platform; and an sdist, which compiles the C implementation on POSIX.
+- An embedding application's hook installed with
+  `LibpythonLinkcheck_Install()` (see above), including under `-I -S`, in
+  subinterpreters, and combined with a later `enable()`.
 - Explicit activation: call `libpython_linkcheck.enable()` in each interpreter
-  that should be checked. Only extension modules imported **after** that call
-  are inspected.
+  that should be checked; the hook it installs covers only that interpreter,
+  including when it is a subinterpreter. Only extension modules imported
+  **after** that call are inspected.
 - Every extension module loaded through the import system
   (`importlib.machinery.ExtensionFileLoader`, which also serves
   `importlib.util.spec_from_file_location` and similar).
@@ -190,10 +198,9 @@ Supported and tested:
 Not covered yet:
 
 - Automatic activation from `sitecustomize` or `.pth` files.
-- Subinterpreters: a Python audit hook belongs to the interpreter that
-  installed it, so `enable()` must be called in each one. This is not yet tested.
-- Free-threaded interpreters: their libpython names are recognized, but the
-  hook has not yet been tested running on a free-threaded build.
+- Free-threaded interpreters: the native wheels are built and smoke-tested
+  (the GIL stays disabled, the hook blocks a linked object), but the full
+  test suite does not yet run on a free-threaded build.
 - Shared libraries opened with `ctypes` or `dlopen()` directly, and extension
   modules that were already loaded before `enable()`.
 - Other platforms: `enable()` works, but non-ELF files (Mach-O, PE) are never

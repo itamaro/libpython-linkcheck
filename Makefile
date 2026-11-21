@@ -13,7 +13,7 @@ RUFF ?= uv run --isolated --only-group lint ruff
 CLANG_FORMAT ?= uv run --isolated --only-group lint clang-format
 C_SOURCES = $(wildcard src/csrc/*.[ch] tests/fixtures/*.c tests/native/*.c)
 
-.PHONY: help check lint format test test-linux dist verify-pypi clean
+.PHONY: help check lint format test test-linux dist wheels verify-pypi clean
 
 help:
 	@echo "make lint        Ruff lint + format check, clang-format check"
@@ -22,6 +22,7 @@ help:
 	@echo "make test-linux  Run the required Linux suite in Podman ($(LINUX_PYTHONS))"
 	@echo "make dist        Build sdist + wheel, twine check, smoke-test both"
 	@echo "make check       lint + test + test-linux + dist"
+	@echo "make wheels      Build + repair native manylinux wheels for this machine's arch (cibuildwheel + Podman)"
 	@echo "make verify-pypi VERSION=x  Install x from PyPI in fresh containers, run the README demo"
 
 check: lint test test-linux dist
@@ -53,8 +54,13 @@ test-linux:
 dist:
 	PYTHON=$(PYTHON) sh ci/build-dist.sh
 
+# Native wheels for the host architecture into wheelhouse/ (CI builds both).
+CIBUILDWHEEL ?= uv run --isolated --only-group wheels cibuildwheel
+wheels:
+	CIBW_CONTAINER_ENGINE=$(PODMAN) $(CIBUILDWHEEL) --platform linux --output-dir wheelhouse
+
 verify-pypi:
 	VERSION=$(VERSION) PODMAN=$(PODMAN) PYTHONS="$(LINUX_PYTHONS)" sh ci/verify-pypi.sh
 
 clean:
-	rm -rf build dist src/*.egg-info .pytest_cache .ruff_cache
+	rm -rf build dist wheelhouse src/*.egg-info .pytest_cache .ruff_cache

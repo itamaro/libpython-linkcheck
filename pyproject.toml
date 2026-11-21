@@ -38,6 +38,7 @@ Issues = "https://github.com/itamaro/libpython-linkcheck/issues"
 test = ["pytest==9.2.0"]
 lint = ["ruff==0.17.6", "clang-format==23.1.5"]
 dist = ["build==1.6.1", "twine==7.0.0"]
+wheels = ["cibuildwheel==4.3.5"]
 dev = [
     { include-group = "test" },
     { include-group = "lint" },
@@ -54,6 +55,32 @@ namespaces = false
 
 [tool.setuptools.package-data]
 libpython_linkcheck = ["py.typed"]
+
+[tool.cibuildwheel]
+# Native wheels: manylinux_2_28 for every supported CPython, including the
+# free-threaded builds. Other platforms (macOS, musl, ...) use the pure-Python
+# wheel. See "Native wheels" in AGENTS.md.
+build = [
+    "cp311-manylinux_*",
+    "cp312-manylinux_*",
+    "cp313-manylinux_*",
+    "cp314-manylinux_*",
+    "cp314t-manylinux_*",
+    "cp315-manylinux_*",
+    "cp315t-manylinux_*",
+]
+build-frontend = "build"
+environment = { CFLAGS = "-Werror" }
+test-command = "python {project}/ci/wheel_smoke.py {project}"
+
+[tool.cibuildwheel.linux]
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
+repair-wheel-command = [
+    "auditwheel show {wheel}",
+    "auditwheel repair --only-plat --plat manylinux_2_28_$(uname -m) -w {dest_dir} {wheel}",
+    "auditwheel show {dest_dir}/*.whl",
+]
 
 [tool.pytest.ini_options]
 minversion = "8.0"

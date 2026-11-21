@@ -82,7 +82,9 @@ All targets work from a fresh checkout. Every target exits non-zero on failure.
 | `make test-linux` | **The required Linux suite.** Runs `ci/run-tests.sh` inside `python:<ver>-trixie` containers for the oldest and newest supported Python (`LINUX_PYTHONS="3.11 3.15"`). Builds the C fixtures inside the container. Sets `LINKCHECK_REQUIRE_LINUX=1`, which turns any skipped test into a failure. |
 | `make test-linux LINUX_PYTHONS=3.13` | Same, for specific versions. |
 | `make test-linux PACKAGE=dist/<file>` | Run the Linux suite against a built wheel or sdist instead of the source tree. |
+| `make test-linux PACKAGE=wheelhouse` | Same, against a directory of wheels: pip installs the one matching each container's interpreter (`--no-index --only-binary`). |
 | `make dist` | `ci/build-dist.sh`: build the sdist, then the pure-Python wheel from the sdist (`LIBPYTHON_LINKCHECK_PURE=1`), `twine check --strict`, `ci/check_dist.py` content/metadata checks, and install-and-import smoke tests of each artifact from outside the checkout (installing the sdist compiles the C implementation). |
+| `make wheels` | Native wheels for the host architecture into `wheelhouse/`: cibuildwheel (pinned in the `wheels` dependency group, configured in `[tool.cibuildwheel]`) in Podman builds each CPython in `manylinux_2_28`, runs `auditwheel show`/`repair --only-plat --plat manylinux_2_28_<arch>`, and runs `ci/wheel_smoke.py` (native implementation, `_native` has no libpython `DT_NEEDED`, the GIL stays disabled on free-threaded builds, the hook blocks a synthetic linked object). On an Apple silicon Mac this builds aarch64; CI builds x86_64 too. |
 | `make check` | `lint` + `test` + `test-linux` + `dist`. |
 | `make verify-pypi VERSION=<v>` | Post-release: install `<v>` from production PyPI in fresh containers and run the README demo. |
 
@@ -100,7 +102,9 @@ pure-Python wheel.
 - The audit hook, ELF inspection, native code, the fixtures, or anything
   about how extensions load: `make test-linux` is mandatory. A skipped Linux
   test on macOS does not validate these changes.
-- Packaging (`pyproject.toml`, `MANIFEST.in`, `ci/*`, workflows): `make dist`
+- Packaging (`pyproject.toml`, `MANIFEST.in`, `ci/*`, workflows): `make dist`,
+  `make wheels` plus `make test-linux PACKAGE=wheelhouse` when the native
+  build or wheel configuration changes,
   and `make test-linux`.
 - Docs only: `make lint`. If README changes, also `make dist` (it is the
   PyPI long description checked by `twine check --strict`) and
@@ -117,9 +121,22 @@ pure-Python wheel.
   `LINKCHECK_REQUIRE_LINUX=1`) in `python:<ver>-trixie` containers for
   3.11–3.15 on x86_64, plus 3.11 and 3.15 on aarch64.
 - `macos`: native test run on 3.11 and 3.15.
-- `dist` (reusable `.github/workflows/dist.yml`): build and check the sdist
-  and wheel once, upload them as the `dist` artifact, then run the Linux suite
-  against the built wheel and the built sdist on 3.11 and 3.15.
+- `dist` (reusable `.github/workflows/dist.yml`), which builds every
+  distribution once:
+  - `build`: the sdist and pure-Python wheel (`ci/build-dist.sh`);
+  - `wheels`: native manylinux_2_28 wheels for x86_64 and aarch64
+    (cibuildwheel; same configuration as `make wheels`);
+  - `check`: `twine check --strict` and `ci/check_dist.py --native-wheels`
+    on all files together (exactly one native wheel per CPython build and
+    architecture in `[tool.cibuildwheel]`, one pure wheel, one sdist, no
+    libpython `DT_NEEDED` in any shipped object), then upload them as the
+    `dist` artifact;
+  - `test`: the Linux suite against those exact files: the native wheel on
+    3.11–3.15 × x86_64/aarch64, and the pure wheel and the sdist on 3.11 and
+    3.15.
+
+  The free-threaded wheels (cp314t, cp315t) are only smoke-tested inside the
+  manylinux image: the `python:<ver>-trixie` images are not free-threaded.
 
 All jobs must be green. After pushing, check the run for your commit:
 
@@ -151,6 +168,7 @@ GitHub environment `pypi`. No API tokens are stored anywhere.
    make check
    make test-linux PACKAGE=dist/libpython_linkcheck-<version>-py3-none-any.whl
    make test-linux PACKAGE=dist/libpython_linkcheck-<version>.tar.gz
+   make wheels && make test-linux PACKAGE=wheelhouse LINUX_PYTHONS="3.11 3.12 3.13 3.14 3.15"
    ```
    (`make check` runs `make dist`, which builds and smoke-tests both artifacts.)
 3. Commit, push to `main`, and wait until CI for that commit is green.

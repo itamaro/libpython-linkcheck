@@ -7,8 +7,10 @@
 #
 # Environment:
 #   PYTHON                   interpreter used to create the venv (default: python3)
-#   PACKAGE                  what to install: a wheel, an sdist, or a source
-#                            directory (default: a scratch copy of this checkout)
+#   PACKAGE                  what to install: a wheel, an sdist, a source
+#                            directory, or a directory of wheels (pip picks the
+#                            one for this interpreter; e.g. cibuildwheel's
+#                            wheelhouse/) (default: a scratch copy of this checkout)
 #   LINKCHECK_REQUIRE_LINUX  set to 1 to fail unless running on Linux with no
 #                            skipped tests (the Linux suite sets this)
 #   LINKCHECK_REQUIRE_NATIVE 1 (default) to require the C implementation;
@@ -57,7 +59,11 @@ pip() { "$venv_python" -m pip --disable-pip-version-check -q "$@"; }
 
 # Dependency groups (pip install --group) need pip >= 25.1.
 pip install --upgrade "pip>=25.1"
-pip install "$package"
+if [ -d "$package" ] && [ ! -e "$package/pyproject.toml" ]; then
+    pip install --no-index --find-links "$package" --only-binary :all: libpython-linkcheck
+else
+    pip install "$package"
+fi
 (cd "$work/src" && pip install --group test)
 
 cd "$work"
@@ -71,6 +77,8 @@ if "site-packages" not in where:
 from libpython_linkcheck import _elf
 print(f"Testing libpython_linkcheck {libpython_linkcheck.__version__} from {where}"
       f" ({_elf.IMPLEMENTATION} implementation)")
+if _elf._native is not None:
+    print(f"C extension: {_elf._native.__file__}")
 print(f"Python {sys.version} on {sys.platform}")
 EOF
 

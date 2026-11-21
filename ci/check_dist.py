@@ -1,21 +1,28 @@
 """Verify the contents and metadata of built distributions.
 
-Usage: python ci/check_dist.py REPO_ROOT DIST_DIR
+Usage: python ci/check_dist.py REPO_ROOT DIST_DIR [--native-wheels]
 
 Checks that:
 * there is exactly one sdist, and at least one wheel, named for the current version;
 * the sdist contains every file needed to build and test (all of src/ and
   tests/, the build configuration, README and LICENSE) and nothing from
   repository-only tooling;
-* each wheel contains every package file, no tests, and correct metadata.
+* each wheel contains every package file, no tests, and correct metadata;
+* the pure-Python wheel is tagged py3-none-any;
+* each native wheel is tagged manylinux_2_28 for one CPython build, and none
+  of its shared objects has a DT_NEEDED entry for libpython (checked with
+  this repository's own pure-Python reader);
+* with --native-wheels, the native wheels are exactly the expected set.
 """
 
 from __future__ import annotations
 
 import ast
 import email.parser
+import re
 import sys
 import tarfile
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -29,6 +36,10 @@ SDIST_REQUIRED_TOP = [
     "MANIFEST.in",
     "PKG-INFO",
 ]
+#: CPython builds and architectures that get a native wheel ([tool.cibuildwheel]).
+NATIVE_PYTHONS = ["cp311", "cp312", "cp313", "cp314", "cp314t", "cp315", "cp315t"]
+NATIVE_ARCHES = ["x86_64", "aarch64"]
+NATIVE_TAG = re.compile(r"(cp3\d+)-(cp3\d+t?)-manylinux_2_28_(x86_64|aarch64)")
 SDIST_FORBIDDEN_PREFIXES = [".github/", ".git/", "CLAUDE.md", "AGENTS.md", "Makefile", "ci/"]
 
 
@@ -94,7 +105,8 @@ def check_sdist(repo: Path, sdist: Path, version: str) -> None:
     print(f"check_dist: {sdist.name}: {len(names)} files OK")
 
 
-def check_wheel(repo: Path, wheel: Path, version: str) -> None:
+def check_wheel(repo: Path, wheel: Path, version: str) -> str | None:
+    """Check one wheel; return "<abi>-<arch>" for a native wheel, None if pure."""
     with zipfile.ZipFile(wheel) as zf:
         names = set(zf.namelist())
         dist_info = f"{PROJECT}-{version}.dist-info"
@@ -113,14 +125,36 @@ def check_wheel(repo: Path, wheel: Path, version: str) -> None:
         check_metadata(zf.read(f"{dist_info}/METADATA"), version, wheel.name)
         wheel_meta = email.parser.BytesParser().parsebytes(zf.read(f"{dist_info}/WHEEL"))
         tags = wheel_meta.get_all("Tag", [])
-        has_native = any(n.endswith(".so") for n in names)
-        if not has_native and tags != ["py3-none-any"]:
-            fail(f"{wheel.name}: pure-Python wheel has tags {tags}")
+        shared = sorted(n for n in names if n.endswith(".so") or ".so." in n)
+        if not shared:
+            if tags != ["py3-none-any"]:
+                fail(f"{wheel.name}: pure-Python wheel has tags {tags}")
+            print(f"check_dist: {wheel.name}: {len(names)} files OK")
+            return None
+        if len(tags) != 1 or not (m := NATIVE_TAG.fullmatch(tags[0])):
+            fail(f"{wheel.name}: native wheel tags {tags} are not one manylinux_2_28 CPython tag")
+        if [n for n in shared if not n.startswith(f"{PROJECT}/_native.")]:
+            fail(f"{wheel.name}: unexpected shared objects {shared} (vendored libraries?)")
+        with tempfile.TemporaryDirectory() as tmp:
+            for name in shared:
+                path = Path(zf.extract(name, tmp))
+                needed = py_read_needed(path)
+                if [n for n in needed if py_is_libpython(n)]:
+                    fail(f"{wheel.name}: {name} links libpython: DT_NEEDED {needed}")
+                print(f"check_dist: {wheel.name}: {name}: DT_NEEDED {needed}")
+    abi = m.group(2)
     print(f"check_dist: {wheel.name}: {len(names)} files OK")
+    return f"{abi}-{m.group(3)}"
 
 
 def main() -> None:
     repo, dist = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
+    expect_native = "--native-wheels" in sys.argv[3:]
+    # The repository's own pure-Python reader checks the shipped objects.
+    sys.path.insert(0, str(repo / "src"))
+    global py_read_needed, py_is_libpython  # noqa: PLW0603
+    from libpython_linkcheck._elf import py_is_libpython, py_read_needed  # noqa: PLC0415
+
     version = read_version(repo)
     sdists = sorted(dist.glob("*.tar.gz"))
     wheels = sorted(dist.glob("*.whl"))
@@ -134,10 +168,27 @@ def main() -> None:
     if sdists[0].name != f"{PROJECT}-{version}.tar.gz":
         fail(f"sdist {sdists[0].name} does not match version {version}")
     check_sdist(repo, sdists[0], version)
+    native, pure = [], 0
     for wheel in wheels:
         if not wheel.name.startswith(f"{PROJECT}-{version}-"):
             fail(f"wheel {wheel.name} does not match version {version}")
-        check_wheel(repo, wheel, version)
+        key = check_wheel(repo, wheel, version)
+        if key is None:
+            pure += 1
+        else:
+            native.append(key)
+    if pure != 1:
+        fail(f"expected exactly one pure-Python wheel, found {pure}")
+    if len(native) != len(set(native)):
+        fail(f"duplicate native wheels: {sorted(native)}")
+    if expect_native:
+        expected = {f"{py}-{arch}" for py in NATIVE_PYTHONS for arch in NATIVE_ARCHES}
+        if set(native) != expected:
+            fail(
+                f"native wheels: missing {sorted(expected - set(native))}, "
+                f"unexpected {sorted(set(native) - expected)}"
+            )
+    print(f"check_dist: {len(native)} native wheels, 1 pure-Python wheel, 1 sdist OK")
 
 
 if __name__ == "__main__":
