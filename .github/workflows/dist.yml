@@ -1,0 +1,59 @@
+# Build the sdist and wheel once, check them, and run the Linux suite against
+# the exact built files. Called by CI on every push/PR and by the release
+# workflow, which then publishes the artifact uploaded here.
+name: dist
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.15"
+      - name: Build, twine check, content check, smoke-test
+        run: sh ci/build-dist.sh
+        env:
+          PYTHON: python
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  test:
+    name: test ${{ matrix.artifact }} (${{ matrix.python }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.15"]
+        artifact: [wheel, sdist]
+    runs-on: ubuntu-24.04
+    container: docker.io/library/python:${{ matrix.python }}-trixie
+    env:
+      LINKCHECK_REQUIRE_LINUX: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - name: Run the Linux suite against the built ${{ matrix.artifact }}
+        run: |
+          case "${{ matrix.artifact }}" in
+            wheel) PACKAGE=$(ls dist/*.whl) ;;
+            sdist) PACKAGE=$(ls dist/*.tar.gz) ;;
+          esac
+          export PACKAGE
+          sh ci/run-tests.sh

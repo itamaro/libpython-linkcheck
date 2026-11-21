@@ -1,0 +1,4 @@
+# The sdist must be enough to build *and* test: ship the whole test tree,
+# including C fixture sources, but no build products.
+graft tests
+global-exclude __pycache__ *.py[cod] *.so *.o
