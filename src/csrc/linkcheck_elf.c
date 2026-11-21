@@ -84,6 +84,16 @@ read_at(reader *r, uint64_t off, uint64_t len, unsigned char *buf)
     return LPC_OK;
 }
 
+int
+lpc_size_add(size_t *total, size_t len)
+{
+    if (len > SIZE_MAX - *total) {
+        return -1;
+    }
+    *total += len;
+    return 0;
+}
+
 /* Allocate and read `len` bytes at `off` (len may be 0). */
 static lpc_status
 read_alloc(reader *r, uint64_t off, uint64_t len, unsigned char **out)
@@ -334,7 +344,12 @@ parse(reader *r, lpc_needed *out)
             }
             size_t len = (size_t)(nul - (strtab + val)) + 1;
             if (pass == 0) {
-                total += len;
+                /* Entries may share one string, so the string table's size
+                   does not bound the sum. */
+                if (lpc_size_add(&total, len) < 0) {
+                    st = LPC_ERR_NOMEM;
+                    goto done;
+                }
             }
             else {
                 memcpy(out->data + pos, strtab + val, len);

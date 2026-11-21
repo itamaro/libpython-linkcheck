@@ -39,6 +39,10 @@ lpc_status lpc_read_needed(const char *path, lpc_needed *out, const char **detai
 
 void lpc_needed_free(lpc_needed *needed);
 
+/* Internal, exposed for tests: add `len` to `*total`. Returns 0, or -1 and
+   leaves `*total` unchanged if the sum does not fit in size_t. */
+int lpc_size_add(size_t *total, size_t len);
+
 /* Return 1 if a DT_NEEDED entry names a libpython shared library (matched on
    its final path component), else 0. Same rule as is_libpython() in
    _elf.py: libpython<digits>[.<digits>][a-z]*.so[.<digits>]* */

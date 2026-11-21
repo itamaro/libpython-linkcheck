@@ -22,6 +22,7 @@ from libpython_linkcheck import _elf
 
 NATIVE_SRC = Path(__file__).resolve().parent.parent / "src" / "csrc"
 HARNESS_SRC = Path(__file__).resolve().parent / "native" / "elfcheck.c"
+SIZECHECK_SRC = Path(__file__).resolve().parent / "native" / "sizecheck.c"
 STATUS = {"ok": 0, "os": 1, "not-elf": 2, "malformed": 3}
 
 # Deselected (not skipped) by conftest.py when the C implementation is not built.
@@ -160,6 +161,37 @@ def test_sanitized_harness_matches_python_reader(corpus, tmp_path):
             tuple((bytes.fromhex(h), int(flag)) for h, flag in (e.split(":") for e in entries)),
         )
         assert got == python_result(path), path
+
+
+@pytest.mark.skipif(not IS_LINUX, reason="sanitizer harness is built on Linux")
+def test_total_name_size_overflow_is_detected(tmp_path):
+    """The reader sums the lengths of all DT_NEEDED names before allocating.
+
+    Entries may share one string, so the string table's size does not bound
+    the sum; lpc_size_add() rejects a sum that does not fit in size_t. The
+    boundary is tested directly, without allocating anything large.
+    """
+    exe = tmp_path / "sizecheck"
+    cmd = [
+        *compiler(),
+        "-std=c11",
+        "-O1",
+        "-fsanitize=address,undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Wshadow",
+        "-Werror",
+        f"-I{NATIVE_SRC}",
+        str(SIZECHECK_SRC),
+        str(NATIVE_SRC / "linkcheck_elf.c"),
+        "-o",
+        str(exe),
+    ]
+    subprocess.run(cmd, check=True)
+    proc = subprocess.run([str(exe)], capture_output=True, text=True, check=False)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert proc.stdout.startswith("sizecheck OK"), proc.stdout
 
 
 @pytest.mark.parametrize(
