@@ -263,6 +263,8 @@ API tokens are stored anywhere.
    `gh run download <run-id> -n autoenable` with
    `https://pypi.org/pypi/libpython-linkcheck-autoenable/<version>/json`.
    Then verify from clean containers: `make verify-pypi VERSION=<version>`
+   first waits until PyPI's index (which lags its JSON API by minutes after
+   an upload) lists both projects' wheels, then
    installs the release from production PyPI (no cache) on 3.12 and 3.15
    and runs the README "Try it" block (no mounts), then installs only
    `libpython-linkcheck-autoenable==<version>` on 3.12 and 3.15t and runs the

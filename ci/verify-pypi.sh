@@ -10,7 +10,8 @@
 #
 # Usage: VERSION=0.1.0a1 ci/verify-pypi.sh   (or: make verify-pypi VERSION=...)
 # Environment: PODMAN (default podman), PYTHONS (default "3.12 3.15"),
-#              AUTOENABLE_PYTHONS (default "3.12 3.15t").
+#              AUTOENABLE_PYTHONS (default "3.12 3.15t"),
+#              WAIT_SECONDS (default 900: how long to wait for PyPI's index).
 set -eu
 
 : "${VERSION:?set VERSION, e.g. VERSION=0.1.0a1}"
@@ -21,6 +22,24 @@ autoenable_pythons=${AUTOENABLE_PYTHONS:-3.12 3.15t}
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/linkcheck-verify.XXXXXX")
 trap 'rm -rf "$work"' EXIT INT TERM
+
+# Right after an upload, PyPI's JSON API lists the release before the simple
+# index that pip reads does (its CDN cache lags by minutes), and pip then
+# fails with "No matching distribution found". Wait, up to WAIT_SECONDS
+# (default 900), until the index lists each project's universal wheel.
+wait_for_index() { # project, wheel file name prefix
+    deadline=$(($(date +%s) + ${WAIT_SECONDS:-900}))
+    until curl -fsS "https://pypi.org/simple/$1/" | grep -q "$2-$VERSION-py3-none-any.whl"; do
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+            echo "PyPI's index does not list $1 $VERSION yet" >&2
+            exit 1
+        fi
+        echo "waiting for PyPI's index to list $1 $VERSION..."
+        sleep 30
+    done
+}
+wait_for_index libpython-linkcheck libpython_linkcheck
+wait_for_index libpython-linkcheck-autoenable libpython_linkcheck_autoenable
 
 # Extract the demo block that tests/test_readme.py also runs.
 python3 - "$repo/README.md" > "$work/demo.sh" <<'EOF'
