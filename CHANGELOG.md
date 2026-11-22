@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.0.0rc1 (2026-11-21)
+
+First release candidate for 1.0.0.
 
 - The opt-in companion `libpython-linkcheck-autoenable` is published on
   PyPI, released together with each version and pinning it exactly:

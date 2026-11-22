@@ -14,7 +14,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "libpython-linkcheck-autoenable"
-version = "0.1.0a3.dev0"
+version = "1.0.0rc1"
 description = "Enable libpython-linkcheck automatically at interpreter startup"
 readme = "README.md"
 license = "MIT"
@@ -23,7 +23,7 @@ requires-python = ">=3.12"
 authors = [{ name = "Itamar Oren" }]
 keywords = ["libpython", "elf", "dt_needed", "extension", "audit-hook", "linker"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
@@ -32,7 +32,7 @@ classifiers = [
     "Topic :: Software Development :: Build Tools",
     "Topic :: Software Development :: Quality Assurance",
 ]
-dependencies = ["libpython-linkcheck==0.1.0a3.dev0"]
+dependencies = ["libpython-linkcheck==1.0.0rc1"]
 
 [project.urls]
 Homepage = "https://github.com/itamaro/libpython-linkcheck"
