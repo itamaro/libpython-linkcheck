@@ -67,9 +67,11 @@ class Exts:
     abi3: Ext
     #: Control: not linked to libpython at all.
     unlinked: Ext
+    #: Control: not linked, and declares no subinterpreter support.
+    main_only: Ext
 
     def __iter__(self):
-        return iter((self.linked, self.abi3, self.unlinked))
+        return iter((self.linked, self.abi3, self.unlinked, self.main_only))
 
 
 def compiler() -> list[str]:
@@ -100,9 +102,9 @@ def build_fixtures(outdir: Path) -> Exts:
     # still assert the resulting DT_NEEDED entries independently.
     link_libpython = ["-Wl,--no-as-needed", f"-L{libdir}", f"-Wl,-rpath,{libdir}"]
 
-    def build(name: str, link: list[str], expected: tuple[str, ...]) -> Ext:
+    def build(name: str, link: list[str], expected: tuple[str, ...], *defines: str) -> Ext:
         out = outdir / f"{name}{suffix}"
-        cmd = [*common, f"-DMODNAME={name}", str(FIXTURE_SRC), "-o", str(out), *link]
+        cmd = [*common, f"-DMODNAME={name}", *defines, str(FIXTURE_SRC), "-o", str(out), *link]
         proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if proc.returncode != 0 or proc.stderr.strip():
             raise BuildError(f"{shlex.join(cmd)}\n{proc.stdout}{proc.stderr}")
@@ -113,6 +115,12 @@ def build_fixtures(outdir: Path) -> Exts:
         linked=build("linked_ext", [*link_libpython, f"-lpython{cfg['LDVERSION']}"], (soname,)),
         abi3=build("abi3_linked_ext", [*link_libpython, "-lpython3"], ("libpython3.so",)),
         unlinked=build("unlinked_ext", ["-Wl,--as-needed"], ()),
+        main_only=build(
+            "main_only_ext",
+            ["-Wl,--as-needed"],
+            (),
+            "-DLINKCHECK_FIXTURE_MAIN_INTERPRETER_ONLY",
+        ),
     )
 
 

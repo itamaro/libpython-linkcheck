@@ -163,12 +163,29 @@ pure-Python wheel.
     extension file names, one pure wheel, one sdist, no libpython
     `DT_NEEDED` in any shipped object), and `ci/check_abi.py` on every
     native wheel, then upload them as the `dist` artifact;
-  - `test`: the Linux suite against those exact files: the native wheel on
-    3.12–3.15 × x86_64/aarch64, and the pure wheel and the sdist on 3.12 and
-    3.15;
-  - `test-freethreaded`: the cp314t and cp315t native wheels on free-threaded
-    builds (x86_64; aarch64 is covered locally by `make wheels` +
+  - `abi3-new-headers`: builds the abi3 wheel from the sdist with CPython
+    3.15's headers and checks it with `ci/check_abi.py` (the 3.12 floor must
+    hold whatever headers compile it);
+  - `test`: the Linux suite against those exact files: the same
+    `cp312-abi3` wheel on 3.12, 3.13, 3.14 and 3.15 × x86_64/aarch64, the
+    `cp315-abi3.abi3t` wheel on 3.15 × both, the whole set installed by
+    project name on 3.12, 3.14 and 3.15 (x86_64) and 3.15 (aarch64), the
+    `abi3-new-headers` wheel on 3.12, and the pure wheel and the sdist on
+    3.12 and 3.15;
+  - `test-freethreaded`: on free-threaded 3.14t and 3.15t (x86_64), the
+    `cp314-cp314t` and `cp315-abi3.abi3t` wheels as files and the set by
+    project name (aarch64 is covered locally by `make wheels` +
     `make test-linux-freethreaded PACKAGE=wheelhouse`).
+
+  `ci/run-tests.sh` fails unless the installed WHEEL tags are the expected
+  ones: a wheel file's own; for a directory, the matrix wheel for that
+  interpreter; for a source tree or sdist, the target `setup.py` builds
+  (`cp312-abi3` on every GIL-enabled CPython). The suite covers the
+  artifact behaviors end to end on each of these: warning attribution to
+  the importing line, an error filter aborting the import before the ELF
+  constructor runs, the embedded launcher under `-I -S`, `_native` in an
+  own-GIL subinterpreter, the GIL staying disabled on free-threaded builds,
+  and one category class under concurrent first use.
 
 All jobs must be green. After pushing, check the run for your commit:
 
@@ -205,6 +222,7 @@ GitHub environment `pypi`. No API tokens are stored anywhere.
    make test-linux PACKAGE=dist/libpython_linkcheck-<version>-py3-none-any.whl
    make test-linux PACKAGE=dist/libpython_linkcheck-<version>.tar.gz
    make wheels && make test-linux PACKAGE=wheelhouse LINUX_PYTHONS="3.12 3.13 3.14 3.15"
+   make test-linux PACKAGE=wheelhouse/libpython_linkcheck-<version>-cp312-abi3-manylinux_2_28_<arch>.whl LINUX_PYTHONS="3.12 3.13 3.14 3.15"
    make test-linux-freethreaded PACKAGE=wheelhouse FT_PYTHON=3.14
    make test-linux-freethreaded PACKAGE=wheelhouse FT_PYTHON=3.15
    ```

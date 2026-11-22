@@ -55,6 +55,28 @@ def run_in_subinterpreter(code):
 """
 
 
+#: Runs *code* in a fresh subinterpreter with its own GIL, which loads only
+#: extensions that declare per-interpreter GIL support.
+OWN_GIL_SUBINTERPRETER_HELPER = """
+def run_in_own_gil_subinterpreter(code):
+    try:
+        import _interpreters as interpreters  # 3.13+
+    except ImportError:
+        import _xxsubinterpreters as interpreters  # 3.12: isolated means its own GIL
+        interp = interpreters.create(isolated=True)
+    else:
+        config = interpreters.new_config("isolated")
+        assert config.gil == "own" and config.check_multi_interp_extensions, config
+        interp = interpreters.create(config)
+    try:
+        failure = interpreters.run_string(interp, code)  # 3.13+ returns, 3.12 raises
+        if failure is not None:
+            raise RuntimeError(f"subinterpreter failed: {failure}")
+    finally:
+        interpreters.destroy(interp)
+"""
+
+
 @dataclass(frozen=True)
 class Venv:
     python: Path

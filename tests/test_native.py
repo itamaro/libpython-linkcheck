@@ -12,11 +12,13 @@ import os
 import random
 import struct
 import subprocess
+import sysconfig
 from pathlib import Path
 
 import pytest
 from elfbuild import DT_SONAME, ElfSpec, build_elf
 from extbuild import IS_LINUX, compiler, readelf_dynamic_symbols
+from pyrun import OWN_GIL_SUBINTERPRETER_HELPER, impl_env, run_python
 
 from libpython_linkcheck import _elf
 
@@ -117,6 +119,79 @@ def test_extension_does_not_register_a_runtime_hook():
     assert "PyUnicode_FSConverter" in undefined  # readelf sees the C API imports
     assert "PySys_AddAuditHook" not in undefined
     assert "LibpythonLinkcheck_Install" not in defined
+
+
+@native
+@pytest.mark.skipif(not IS_LINUX, reason="the fixtures are Linux extension modules")
+def test_extension_loads_in_an_own_gil_subinterpreter(exts, tmp_path):
+    """_native declares per-interpreter GIL support, and its hook works there.
+
+    The control proves the subinterpreter enforces that declaration.
+    """
+    sub = f"""
+import sys, warnings
+sys.path.insert(0, {str(exts.dir)!r})
+try:
+    import main_only_ext
+except ImportError:
+    print("control refused", flush=True)
+import libpython_linkcheck as m
+from libpython_linkcheck import _elf, _native
+same_file = _native.__file__ == {_elf._native.__file__!r}
+print("native:", _elf._native is _native, same_file, flush=True)
+print("enabled:", m.enable(), m.LibpythonLinkWarning is _native.category(), flush=True)
+warnings.simplefilter("error")
+try:
+    import linked_ext
+except m.LibpythonLinkWarning as w:
+    print("blocked:", w.module, flush=True)
+import unlinked_ext
+print("loaded:", unlinked_ext.hello(), flush=True)
+"""
+    code = OWN_GIL_SUBINTERPRETER_HELPER + f"run_in_own_gil_subinterpreter({sub!r})\n"
+    r = run_python(code, workdir=tmp_path, env=impl_env("native"))
+    assert (r.returncode, r.stderr) == (0, ""), r.stderr
+    assert r.stdout == (
+        "control refused\n"
+        "native: True True\n"
+        "enabled: True True\n"
+        "blocked: linked_ext\n"
+        "loaded: unlinked_ext\n"
+    )
+    assert "linked_ext" not in r.ctor
+
+
+@native
+@pytest.mark.skipif(not IS_LINUX, reason="the fixtures are Linux extension modules")
+def test_extension_keeps_the_gil_disabled(exts, tmp_path):
+    """On a free-threaded build the GIL starts disabled and stays disabled.
+
+    An extension without Py_mod_gil would re-enable it when imported. This
+    runs without PYTHON_GIL or -X gil, so the default applies. On a
+    GIL-enabled build the state is simply unchanged.
+    """
+    code = f"""
+import sys, sysconfig, warnings
+sys.path.insert(0, {str(exts.dir)!r})
+gil = getattr(sys, "_is_gil_enabled", lambda: True)  # 3.13+; 3.12 always has the GIL
+states = [gil()]
+from libpython_linkcheck import _native
+states.append(gil())
+import libpython_linkcheck as m
+assert m.enable()
+states.append(gil())
+warnings.simplefilter("always")
+import linked_ext, unlinked_ext
+found = []
+sys.audit("libpython_linkcheck.probe", found)
+states.append(gil())
+print(bool(sysconfig.get_config_var("Py_GIL_DISABLED")), states, len(found))
+"""
+    r = run_python(code, workdir=tmp_path, env=impl_env("native"))
+    assert r.returncode == 0, r.stderr
+    free_threaded = bool(sysconfig.get_config_var("Py_GIL_DISABLED"))
+    assert r.stdout == f"{free_threaded} {[not free_threaded] * 4} 1\n"
+    assert len(r.link_warnings) == 1, r.stderr
 
 
 @native

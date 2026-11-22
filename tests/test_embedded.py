@@ -168,6 +168,41 @@ except m.LibpythonLinkWarning as w:
     assert r.ctor == []
 
 
+def test_category_is_one_class_under_concurrent_first_use(venv_launcher, tmp_path, hook_impl):
+    """The embedded hook and the package race to create the category.
+
+    Threads start together (truly in parallel on a free-threaded build) and
+    ask for the class through the embedded hook (the probe) and through the
+    package; every answer must be the same class.
+    """
+    code = f"""
+import sys, threading
+barrier = threading.Barrier(16)
+results = []
+
+def via_probe():
+    barrier.wait()
+    found = []
+    sys.audit({PROBE!r}, found)
+    results.append(found[0][1])
+
+def via_package():
+    barrier.wait()
+    import libpython_linkcheck
+    results.append(libpython_linkcheck.LibpythonLinkWarning)
+
+threads = [threading.Thread(target=(via_probe, via_package)[i % 2]) for i in range(16)]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+print(len(results), len(set(map(id, results))))
+"""
+    r = run_python(code, workdir=tmp_path, env=impl_env(hook_impl), executable=venv_launcher)
+    assert (r.returncode, r.stderr) == (0, ""), r.stderr
+    assert r.stdout == "16 1\n"
+
+
 def test_embedded_hook_covers_subinterpreters(isolated, exts):
     sub = f"""
 import sys, warnings

@@ -92,16 +92,56 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+  # The abi3 wheel built from the sdist with CPython 3.15's headers: the
+  # 3.12 floor must hold (no newer functions or slot values), so it is checked
+  # with ci/check_abi.py here and tested on CPython 3.12 below.
+  abi3-new-headers:
+    name: abi3-new-headers
+    needs: build
+    runs-on: ubuntu-24.04
+    container: docker.io/library/python:3.15-trixie
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist-sdist
+          path: dist/
+      - name: Build the abi3 wheel with 3.15 headers, check its Stable ABI floor
+        run: |
+          python -m pip install --upgrade "pip>=25.1"
+          python -m pip install --group dist
+          CFLAGS=-Werror python -m pip wheel --no-deps -w abi3-new-headers dist/*.tar.gz
+          ls abi3-new-headers/*-cp312-abi3-linux_x86_64.whl
+          python ci/check_abi.py abi3-new-headers/*.whl
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: abi3-new-headers
+          path: abi3-new-headers/
+          if-no-files-found: error
+
+  # Each wheel on every interpreter it serves (installed as that file), the
+  # full set installed by project name (pip must pick the matrix's wheel;
+  # ci/run-tests.sh checks which one it installed), the pure wheel, and the
+  # sdist.
   test:
     name: test ${{ matrix.package }} (${{ matrix.python }}, ${{ matrix.arch }})
-    needs: check
+    needs: [check, abi3-new-headers]
     strategy:
       fail-fast: false
       matrix:
         python: ["3.12", "3.13", "3.14", "3.15"]
         arch: [x86_64, aarch64]
-        package: [native-wheel]
+        package: [cp312-abi3]
         include:
+          - { python: "3.15", arch: x86_64, package: cp315-abi3.abi3t }
+          - { python: "3.15", arch: aarch64, package: cp315-abi3.abi3t }
+          - { python: "3.12", arch: x86_64, package: by-name }
+          - { python: "3.14", arch: x86_64, package: by-name }
+          - { python: "3.15", arch: x86_64, package: by-name }
+          - { python: "3.15", arch: aarch64, package: by-name }
+          - { python: "3.12", arch: x86_64, package: abi3-new-headers }
           - { python: "3.12", arch: x86_64, package: pure-wheel }
           - { python: "3.15", arch: x86_64, package: pure-wheel }
           - { python: "3.12", arch: x86_64, package: sdist }
@@ -118,13 +158,21 @@ jobs:
         with:
           name: dist
           path: dist/
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: matrix.package == 'abi3-new-headers'
+        with:
+          name: abi3-new-headers
+          path: abi3-new-headers/
       - name: Run the Linux suite against the built ${{ matrix.package }}
         env:
           PACKAGE_KIND: ${{ matrix.package }}
+          ARCH: ${{ matrix.arch }}
         run: |
           case "$PACKAGE_KIND" in
-            # A directory: pip picks this interpreter's native wheel.
-            native-wheel) PACKAGE=dist ;;
+            cp*) PACKAGE=$(ls dist/*-"$PACKAGE_KIND"-manylinux_2_28_"$ARCH".whl) ;;
+            # A directory: pip picks this interpreter's wheel by project name.
+            by-name) PACKAGE=dist ;;
+            abi3-new-headers) PACKAGE=$(ls abi3-new-headers/*.whl) ;;
             pure-wheel) PACKAGE=$(ls dist/*-py3-none-any.whl) ;;
             sdist) PACKAGE=$(ls dist/*.tar.gz) ;;
           esac
@@ -132,13 +180,16 @@ jobs:
           sh ci/run-tests.sh
 
   test-freethreaded:
-    name: test native-wheel (${{ matrix.python }}t, ${{ matrix.arch }})
+    name: test ${{ matrix.package }} (${{ matrix.python }}t, ${{ matrix.arch }})
     needs: check
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.14", "3.15"]
-        arch: [x86_64]
+        include:
+          - { python: "3.14", arch: x86_64, package: cp314-cp314t }
+          - { python: "3.14", arch: x86_64, package: by-name }
+          - { python: "3.15", arch: x86_64, package: cp315-abi3.abi3t }
+          - { python: "3.15", arch: x86_64, package: by-name }
     runs-on: ubuntu-24.04
     container: docker.io/library/python:${{ matrix.python }}-trixie
     env:
@@ -159,5 +210,14 @@ jobs:
         with:
           name: dist
           path: dist/
-      - name: Run the Linux suite against the built free-threaded wheel
-        run: PACKAGE=dist sh ci/test-freethreaded.sh
+      - name: Run the Linux suite against the built ${{ matrix.package }}
+        env:
+          PACKAGE_KIND: ${{ matrix.package }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          case "$PACKAGE_KIND" in
+            cp*) PACKAGE=$(ls dist/*-"$PACKAGE_KIND"-manylinux_2_28_"$ARCH".whl) ;;
+            by-name) PACKAGE=dist ;;
+          esac
+          export PACKAGE
+          sh ci/test-freethreaded.sh

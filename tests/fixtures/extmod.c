@@ -4,6 +4,9 @@
  *
  *   cc -shared -fPIC -DMODNAME=<name> extmod.c ... [-lpython3.X | -lpython3]
  *
+ * With -DLINKCHECK_FIXTURE_MAIN_INTERPRETER_ONLY it declares no support for
+ * subinterpreters: a control that an isolated subinterpreter must refuse.
+ *
  * The ELF constructor runs when the dynamic loader maps the object, before
  * PyInit_<name>. It appends the module name to $LINKCHECK_FIXTURE_CTOR_LOG,
  * which lets tests prove whether dlopen() happened at all.
@@ -50,7 +53,11 @@ static PyMethodDef methods[] = {
 };
 
 static PyModuleDef_Slot slots[] = {
+#ifdef LINKCHECK_FIXTURE_MAIN_INTERPRETER_ONLY
+    {Py_mod_multiple_interpreters, Py_MOD_MULTIPLE_INTERPRETERS_NOT_SUPPORTED},
+#else
     {Py_mod_multiple_interpreters, Py_MOD_PER_INTERPRETER_GIL_SUPPORTED},
+#endif
 #if PY_VERSION_HEX >= 0x030D0000
     {Py_mod_gil, Py_MOD_GIL_NOT_USED},
 #endif

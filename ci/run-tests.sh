@@ -15,6 +15,11 @@
 #                            skipped tests (the Linux suite sets this)
 #   LINKCHECK_REQUIRE_NATIVE 1 (default) to require the C implementation;
 #                            defaults to 0 when PACKAGE is a pure-Python wheel
+#
+# Before pytest it checks the installed wheel's tags: PACKAGE's own for a
+# wheel file, the wheel matrix entry for this interpreter for a directory
+# (what pip should pick by project name), and the setup.py target for a
+# source tree or sdist.
 #   CFLAGS                   extra C flags; -Werror is always added when the
 #                            C extension is compiled from source
 #   LINKCHECK_BENCH          set to 1 to run ci/bench_hook.py (the hook overhead
@@ -70,8 +75,12 @@ fi
 (cd "$work/src" && pip install --group test)
 
 cd "$work"
-"$venv_python" - <<'EOF'
+LINKCHECK_PACKAGE=$package "$venv_python" - <<'EOF'
+import os
 import sys
+import sysconfig
+from importlib.metadata import distribution
+
 import libpython_linkcheck
 
 where = libpython_linkcheck.__file__
@@ -89,6 +98,28 @@ if sysconfig.get_config_var("Py_GIL_DISABLED"):
         sys.exit("importing libpython_linkcheck re-enabled the GIL")
     print("free-threaded build: the GIL stays disabled")
 print(f"Python {sys.version} on {sys.platform}")
+
+# Which wheel got installed: a wheel file as itself; from a directory, the
+# one pip should pick for this interpreter (the wheel matrix in AGENTS.md);
+# from source, the target setup.py builds for it.
+package = os.environ["LINKCHECK_PACKAGE"]
+free_threaded = bool(sysconfig.get_config_var("Py_GIL_DISABLED"))
+if package.endswith(".whl"):
+    expected = "-".join(os.path.basename(package).split("-")[2:4])
+elif free_threaded:
+    expected = "cp315-abi3.abi3t" if sys.version_info >= (3, 15) else "cp314-cp314t"
+elif os.path.isdir(package) and not os.path.exists(os.path.join(package, "pyproject.toml")):
+    expected = "cp315-abi3.abi3t" if sys.version_info >= (3, 15) else "cp312-abi3"
+else:
+    expected = "cp312-abi3"
+python_tag, abis = expected.split("-")
+wheel = distribution("libpython-linkcheck").read_text("WHEEL") or ""
+installed = sorted(
+    line.split(": ", 1)[1].rsplit("-", 1)[0] for line in wheel.splitlines() if line.startswith("Tag: ")
+)
+if installed != sorted(f"{python_tag}-{abi}" for abi in abis.split(".")):
+    sys.exit(f"installed a wheel tagged {installed}, expected {expected}")
+print(f"Installed wheel: {expected}")
 EOF
 
 # -P: do not put the CWD on sys.path, so only the installed package is importable.
