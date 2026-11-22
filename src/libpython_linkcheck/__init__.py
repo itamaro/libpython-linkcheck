@@ -10,6 +10,7 @@ object is loaded.
 
 from ._elf import ELFError, libpython_dependencies
 from ._hook import LibpythonLinkWarning, enable, is_enabled
+from ._hook import _autoenable as _autoenable  # the autoenable distribution's entry point
 from ._version import __version__
 
 __all__ = [

@@ -1,4 +1,4 @@
 # PEP 829 (Python 3.15+): run at interpreter startup, after every .pth path
 # entry is on sys.path. Its presence also disables the import line of the
-# matching libpython_linkcheck_autoenable.pth, which serves Python 3.11-3.14.
-libpython_linkcheck:enable
+# matching libpython_linkcheck_autoenable.pth, which serves Python 3.12-3.14.
+libpython_linkcheck:_autoenable

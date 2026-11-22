@@ -1,1 +1,1 @@
-import libpython_linkcheck; libpython_linkcheck.enable()
+import libpython_linkcheck; libpython_linkcheck._autoenable()

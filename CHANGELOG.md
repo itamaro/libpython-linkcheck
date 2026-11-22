@@ -19,14 +19,16 @@
   - If CPython resolved them at startup (the package was importable then),
     `enable()` leaves the filters alone. Previously it could move them in front
     of filters the program had installed, such as `warnings.simplefilter("ignore")`.
-  - If CPython dropped them, `enable()` applies them once per filter list,
-    so a call inside `warnings.catch_warnings()` no longer keeps a later call
-    from applying them to the restored list. Called from site startup code
-    (the autoenable `.pth` / `.start` files, `sitecustomize`), they get the
-    precedence of their position among the options. Called later, they go
-    behind every filter equal to another startup option and every filter
-    the program added in front of those. Previously `enable()` put them in
-    front of every filter.
+  - If CPython dropped them, the first `enable()` call applies them to the
+    filter list in effect and, inside `warnings.catch_warnings()`, also to
+    the list that block restores; later calls never add them again, so
+    `warnings.resetwarnings()` stays in effect. From the autoenable `.pth` /
+    `.start` files, which now call `libpython_linkcheck._autoenable()` and
+    run before `sitecustomize` and program code, they get the precedence of
+    their position among the options. From any other call, including
+    `sitecustomize`, they go behind every filter equal to another startup
+    option and every filter in front of those. Previously `enable()` put
+    them in front of every filter.
   - Message and module fields are parsed as the running CPython parses them:
     `/regex/` fields on 3.15, and the `\z` module anchor on 3.14+.
 - `enable()` also applies such entries when it finds a hook that is already

@@ -88,6 +88,11 @@ def test_sitecustomize_with_category_filter_on_the_command_line(run, venv, hook_
 CATEGORY = "libpython_linkcheck.LibpythonLinkWarning"
 
 
+def startup_env(exts: Exts, startup: str) -> dict[str, str]:
+    """Make the package importable at startup ("resolved"), or not ("dropped")."""
+    return {"PYTHONPATH": f"{package_parent()}:{exts.dir}"} if startup == "resolved" else {}
+
+
 @pytest.mark.parametrize("startup", ["resolved", "dropped"])
 @pytest.mark.parametrize(
     "flags",
@@ -101,14 +106,12 @@ CATEGORY = "libpython_linkcheck.LibpythonLinkWarning"
     ],
     ids=["ignore", "ignore-main", "error-main", "message-regex"],
 )
-def test_sitecustomize_keeps_option_precedence(run, venv, exts, hook_impl, *, flags, startup):
-    """From site no program code has run, so a recovered entry gets the
-    precedence of its position, exactly as when CPython resolves it at startup."""
-    (venv.site_packages / "sitecustomize.py").write_text(CUSTOMIZE)
-    env = {}
-    if startup == "resolved":
-        env["PYTHONPATH"] = f"{package_parent()}:{exts.dir}"
-    r = run(REPORT_AND_IMPORT, *flags, env=env)
+def test_autoenable_keeps_option_precedence(run, venv, exts, hook_impl, *, flags, startup):
+    """The autoenable files run before sitecustomize and program code, so a
+    recovered entry gets the precedence of its position, exactly as when
+    CPython resolves it at startup."""
+    install_autoenable(venv.site_packages)
+    r = run(REPORT_AND_IMPORT, *flags, env=startup_env(exts, startup))
     assert (STARTUP_NOTICE in r.stderr.splitlines()) is (startup == "dropped"), r.stderr
     if "/" in flags[-1] and sys.version_info < (3, 15):
         assert r.returncode == 0, r.stderr
@@ -117,10 +120,19 @@ def test_sitecustomize_keeps_option_precedence(run, venv, exts, hook_impl, *, fl
         assert_blocked(r, [hook_impl])
 
 
-def test_autoenable_recovery_keeps_option_precedence(run, venv, hook_impl):
-    install_autoenable(venv.site_packages)
-    flags = ("-W", "ignore", "-W", "error::libpython_linkcheck.LibpythonLinkWarning")
-    assert_blocked(run(REPORT_AND_IMPORT, *flags), [hook_impl])
+@pytest.mark.parametrize("startup", ["resolved", "dropped"])
+def test_sitecustomize_filters_keep_precedence(run, venv, exts, hook_impl, startup):
+    """sitecustomize may set its own policy before enable(), and the filter
+    list cannot tell its simplefilter("ignore") from -W ignore: it wins."""
+    (venv.site_packages / "sitecustomize.py").write_text(
+        "import warnings\nwarnings.simplefilter('ignore')\n" + CUSTOMIZE
+    )
+    flags = ("-W", "ignore", "-W", f"error::{CATEGORY}")
+    r = run(REPORT_AND_IMPORT, *flags, env=startup_env(exts, startup))
+    assert (STARTUP_NOTICE in r.stderr.splitlines()) is (startup == "dropped"), r.stderr
+    assert r.returncode == 0, r.stderr
+    assert (r.stdout, r.ctor) == (f"{[hook_impl]}\n", ["linked_ext"])
+    assert r.link_warnings == []
 
 
 def test_usercustomize(exts: Exts, tmp_path, hook_impl):

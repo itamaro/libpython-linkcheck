@@ -340,6 +340,23 @@ import linked_ext
     assert_blocked(startup(code, "-W", f"error::{CATEGORY}"))
 
 
+def test_reset_after_nested_context_is_kept(startup):
+    """resetwarnings() removes the entry for good, even if a later enable()
+    runs inside catch_warnings() and another after it."""
+    code = """
+import warnings
+from libpython_linkcheck import enable
+enable()
+warnings.resetwarnings()
+with warnings.catch_warnings():
+    enable()
+enable()
+import linked_ext
+"""
+    r = startup(code, "-W", f"error::{CATEGORY}")
+    assert (r.returncode, r.ctor, len(r.link_warnings)) == (0, ["linked_ext"], 1), r.stderr
+
+
 def test_message_regex_option(startup):
     """3.15 reads a message field enclosed in slashes as a regular expression;
     older versions match it literally, so it never matches this warning."""

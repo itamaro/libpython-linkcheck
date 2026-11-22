@@ -99,26 +99,27 @@ override a recovered entry
 (`-W error::libpython_linkcheck.LibpythonLinkWarning -W ignore` ignores the
 warning), and `PYTHONWARNINGS` entries still come before `-W` options.
 
-Where a recovered entry goes depends on when `enable()` runs:
+Where a recovered entry goes depends on how the hook is enabled:
 
-- From site startup code (the autoenable `.pth` / `.start` files, or
-  `sitecustomize`), no program code has run yet, so the entry gets the
-  precedence its position gives it, exactly as if CPython had applied it:
+- The autoenable `.pth` / `.start` files run before `sitecustomize` and any
+  program code, so the entry gets the precedence its position gives it,
+  exactly as if CPython had applied it:
   `-W ignore -W error::libpython_linkcheck.LibpythonLinkWarning` makes the
   warning an error.
-- Later, the program may already have installed filters of its own, and
-  the filter list cannot tell `warnings.simplefilter("ignore")` from the
-  `ignore` filter `-W ignore` installed. The program's current policy wins:
-  the entry goes behind every filter equal to another startup option, and
-  behind any filter the program added in front of those. So with
-  `-W ignore -W error::libpython_linkcheck.LibpythonLinkWarning`, a call to
-  `enable()` from the program ignores the warning. To get the error there,
-  use `-W error::RuntimeWarning` or a message filter, or enable the hook
-  from site.
+- Any other `enable()` call (including from `sitecustomize`) may come after
+  code that installed filters of its own, and the filter list cannot tell
+  `warnings.simplefilter("ignore")` from the `ignore` filter `-W ignore`
+  installed. That code's policy wins: the entry goes behind every filter
+  equal to another startup option, and behind any filter added in front of
+  those. So with `-W ignore -W error::libpython_linkcheck.LibpythonLinkWarning`,
+  such a call ignores the warning. To get the error there, use
+  `-W error::RuntimeWarning` or a message filter, or the autoenable files.
 
-The entries are applied once per filter list, so a list that
-`warnings.catch_warnings()` restores still gets them from the next
-`enable()` call. The other forms in the table work without this step.
+The first `enable()` call in an interpreter applies the entries, to the
+filter list in effect and, inside `warnings.catch_warnings()`, also to the
+list that block restores. Later calls never add them again, so a program
+that removes them (for example with `warnings.resetwarnings()`) keeps that
+policy. The other forms in the table work without this step.
 
 ### Checking files without importing them
 
@@ -154,9 +155,11 @@ inspected.
 
 `libpython-linkcheck-autoenable` is not on PyPI; build it from the
 repository with `python -m build --wheel autoenable`. On Python 3.12–3.14 its
-`.pth` file's import line calls `enable()`; on 3.15 and later the matching
-[PEP 829](https://peps.python.org/pep-0829/) `.start` file
-(`libpython_linkcheck:enable`) does, and disables that import line.
+`.pth` file's import line calls `libpython_linkcheck._autoenable()`, which is
+`enable()` with the warning-option precedence described in
+[Controlling the warning](#controlling-the-warning); on 3.15 and later the
+matching [PEP 829](https://peps.python.org/pep-0829/) `.start` file
+(`libpython_linkcheck:_autoenable`) does, and disables that import line.
 
 ## Embedding: a hook installed before Python starts
 
@@ -190,8 +193,8 @@ Warning filters work as usual, with one exception: CPython cannot resolve
 startup. With only the embedded hook (no package installed, or `-I -S`),
 use `-W error::RuntimeWarning`, a message filter, or `-Werror` instead. If
 the package is installed and the program calls `libpython_linkcheck.enable()`
-(directly or through one of the activation paths above), that call applies
-the dropped entry as described in
+(directly or through one of the activation paths above), the first such call
+applies the dropped entry as described in
 [Controlling the warning](#controlling-the-warning), without installing a
 second hook.
 

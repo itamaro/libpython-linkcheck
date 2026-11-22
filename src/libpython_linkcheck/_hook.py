@@ -114,11 +114,10 @@ _CATEGORY_NAMES = frozenset(
     {"libpython_linkcheck.LibpythonLinkWarning", "libpython_linkcheck._hook.LibpythonLinkWarning"}
 )
 _ACTIONS = ("default", "always", "all", "ignore", "module", "once", "error")
-# Attributes of the (per-interpreter) category class, shared by every copy of
-# this module: True if CPython resolved the -W entries naming it at startup;
-# the filter list enable() last applied the dropped entries to.
-_RESOLVED_MARK = "_libpython_linkcheck_warnoptions_resolved"
-_APPLIED_MARK = "_libpython_linkcheck_warnoptions_applied"
+#: Set on the (per-interpreter) category class, which every copy of this
+#: module shares, once nothing is left to recover: CPython resolved the -W
+#: entries naming it at startup, or enable() applied the dropped ones.
+_DONE_MARK = "_libpython_linkcheck_warnoptions_done"
 #: Modules holding CPython's warnings implementation (3.14+: _py_warnings).
 _WARNINGS_MODULES = frozenset({"warnings", "_py_warnings"})
 # How CPython's warnings._setoption() turns the message and module fields
@@ -149,11 +148,7 @@ def _imported_by_warning_options() -> bool:
 
 
 def _called_from_site() -> bool:
-    """True while ``site`` runs startup code (.pth / .start files, sitecustomize).
-
-    No program code has run yet, so the filters are exactly what CPython's
-    startup and earlier site hooks made them.
-    """
+    """True while ``site`` runs startup code (.pth / .start files, sitecustomize)."""
     site = sys.modules.get("site")
     if site is None:
         return False
@@ -275,7 +270,9 @@ def _find(filters: list[Any], block: list[_Filter]) -> int:
     return next((i for i in range(len(filters) - n + 1) if filters[i : i + n] == block), -1)
 
 
-def _place_recovered(filters: list[Any], entries: list[tuple[bool, _Filter]]) -> bool:
+def _place_recovered(
+    filters: list[Any], entries: list[tuple[bool, _Filter]], *, by_position: bool
+) -> bool:
     """Insert the dropped entries for our category into *filters*; True if changed."""
     others = _simulate([item for is_ours, item in entries if not is_ours])
     missing = [
@@ -285,9 +282,9 @@ def _place_recovered(filters: list[Any], entries: list[tuple[bool, _Filter]]) ->
     ]
     if not missing:
         return False
-    if others and _called_from_site() and (pos := _find(filters, others)) >= 0:
-        # Only startup code has run: give every option the precedence of its
-        # position, as if CPython had resolved them all.
+    if by_position and others and (pos := _find(filters, others)) >= 0:
+        # The filters are still the startup ones: give every option the
+        # precedence of its position, as if CPython had resolved them all.
         everything = _simulate([item for _, item in entries])
         desired = [item for item in everything if item in others or item in missing]
         filters[pos : pos + len(others)] = desired
@@ -301,7 +298,17 @@ def _place_recovered(filters: list[Any], entries: list[tuple[bool, _Filter]]) ->
     return True
 
 
-def _apply_dropped_warnoptions() -> None:
+def _original_filters() -> list[Any] | None:
+    """The interpreter's startup filter list, which catch_warnings() restores."""
+    try:
+        import _warnings  # noqa: PLC0415
+    except ImportError:
+        return None
+    filters = getattr(_warnings, "filters", None)
+    return filters if isinstance(filters, list) else None
+
+
+def _apply_dropped_warnoptions(*, at_startup: bool = False) -> None:
     """Apply -W / PYTHONWARNINGS entries for our category that CPython dropped.
 
     CPython resolves the categories named in warning options during startup,
@@ -312,37 +319,44 @@ def _apply_dropped_warnoptions() -> None:
     If the options resolved at startup (the package was importable then),
     nothing changes: they are in effect, in the order the program left them.
 
-    Otherwise each dropped entry is added to the current filter list unless
-    an equal filter is already there. Called while ``site`` runs startup code
-    (the .pth / .start activation, sitecustomize), no program code has run,
-    so the entries get the precedence of their position among the options.
-    Called later, the program may have installed filters equal to startup
-    ones, which the list cannot tell apart: every filter equal to another
-    startup option, and every filter the program added in front of them,
-    keeps precedence, and the entries go right behind them. CPython's default
-    filters never match a RuntimeWarning.
+    Otherwise the first call in the interpreter adds each dropped entry,
+    unless an equal filter is already there, to the filter list in effect
+    and to the interpreter's original list if that is a different one (the
+    call is inside ``catch_warnings()``, which restores the original on
+    exit). That is where CPython would have put them; later lists are copies
+    the program made, or its own, and are left alone, as is any filter the
+    program removes later (``resetwarnings()``).
 
-    Applied once per filter list: a list replaced by ``catch_warnings()``
-    gets the entries again when enable() is called with it in effect.
+    *at_startup* (the autoenable entry point, from ``site``, before
+    ``sitecustomize``) gives the entries the precedence of their position
+    among the options. Otherwise the program may have installed filters
+    equal to startup ones, which the list cannot tell apart: every filter
+    equal to another startup option, and every filter in front of them,
+    keeps precedence, and the entries go right behind them. CPython's
+    default filters never match a RuntimeWarning.
     """
     category: Any = LibpythonLinkWarning
-    if getattr(category, _RESOLVED_MARK, False):
+    if getattr(category, _DONE_MARK, False):
         return
     entries = [e for e in map(_option_filter, sys.warnoptions) if e is not None]
-    if not any(is_ours for is_ours, _ in entries):
-        return
-    lock = getattr(warnings, "_lock", None)  # 3.14+
-    with lock if lock is not None else contextlib.nullcontext():
-        get_filters = getattr(warnings, "_get_filters", None)  # 3.14+: per-context lists
-        filters = get_filters() if get_filters is not None else warnings.filters
-        if getattr(category, _APPLIED_MARK, None) is filters:
-            return
-        if _place_recovered(filters, entries):
-            mutated = getattr(warnings, "_filters_mutated_lock_held", None)
-            if mutated is None:
-                mutated = warnings._filters_mutated  # type: ignore[attr-defined]
-            mutated()
-        setattr(category, _APPLIED_MARK, filters)
+    if any(is_ours for is_ours, _ in entries):
+        lock = getattr(warnings, "_lock", None)  # 3.14+
+        with lock if lock is not None else contextlib.nullcontext():
+            get_filters = getattr(warnings, "_get_filters", None)  # 3.14+: per-context lists
+            current = get_filters() if get_filters is not None else warnings.filters
+            targets = [current]
+            original = _original_filters()
+            if original is not None and original is not current:
+                targets.append(original)
+            changed = False
+            for filters in targets:
+                changed |= _place_recovered(filters, entries, by_position=at_startup)
+            if changed:
+                mutated = getattr(warnings, "_filters_mutated_lock_held", None)
+                if mutated is None:
+                    mutated = warnings._filters_mutated  # type: ignore[attr-defined]
+                mutated()
+    setattr(category, _DONE_MARK, True)
 
 
 def _installed_hooks() -> list[str]:
@@ -363,7 +377,7 @@ def enable() -> bool:
     embedding application with ``LibpythonLinkcheck_Install()``), nothing is
     installed and False is returned. Returns True if this call installed it.
 
-    It also applies, once per warning filter list, any ``-W`` or
+    The first call in an interpreter also applies any ``-W`` or
     ``PYTHONWARNINGS`` entries naming
     ``libpython_linkcheck.LibpythonLinkWarning`` that CPython could not
     resolve at startup, without overriding filters the program may have
@@ -374,6 +388,20 @@ def enable() -> bool:
     of the interpreter. Raises RuntimeError if another audit hook prevented
     the installation.
     """
+    return _enable(at_startup=False)
+
+
+def _autoenable() -> bool:
+    """enable() for the libpython-linkcheck-autoenable .pth / .start files.
+
+    They run from ``site`` before ``sitecustomize`` and any program code, so
+    dropped -W entries get the precedence of their position (see
+    _apply_dropped_warnoptions). Called from anywhere else, this is enable().
+    """
+    return _enable(at_startup=_called_from_site())
+
+
+def _enable(*, at_startup: bool) -> bool:
     with _enable_lock:
         installed = False
         if not is_enabled():
@@ -386,7 +414,7 @@ def enable() -> bool:
                     "another audit hook prevented libpython-linkcheck from installing"
                 )
             installed = True
-        _apply_dropped_warnoptions()
+        _apply_dropped_warnoptions(at_startup=at_startup)
         return installed
 
 
@@ -394,4 +422,4 @@ def enable() -> bool:
 # Record that on the interpreter's category, which every copy of the module
 # shares, so enable() leaves the filters alone.
 if _imported_by_warning_options():
-    setattr(LibpythonLinkWarning, _RESOLVED_MARK, True)
+    setattr(LibpythonLinkWarning, _DONE_MARK, True)
