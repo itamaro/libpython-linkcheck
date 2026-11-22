@@ -207,7 +207,7 @@ comment; same-repository workflows are referenced as `$/...`, not `./...`;
 every job has a `name:` (equal to its id unless it is a matrix job);
 `${{ }}` expressions reach `run:` scripts only through `env:`;
 every granted permission carries a comment saying why; the default token permission is `contents: read`; only the release
-`publish` job gets `id-token: write`; checkouts use
+`publish` and `publish-autoenable` jobs get `id-token: write`; checkouts use
 `persist-credentials: false`.
 
 ## Release procedure
@@ -216,14 +216,17 @@ every granted permission carries a comment saying why; the default token permiss
 specific version.** Authorization for one release is not standing permission
 for later ones. Without it, prepare the release commit and stop for review.
 
-Publishing uses PyPI Trusted Publishing: PyPI project `libpython-linkcheck`,
-owner `itamaro`, repository `libpython-linkcheck`, workflow `release.yml`,
-GitHub environment `pypi`. No API tokens are stored anywhere.
+One tag releases two PyPI projects with the same version:
+`libpython-linkcheck` (the core) and `libpython-linkcheck-autoenable` (the
+opt-in companion, which pins that exact core version). Both use PyPI Trusted
+Publishing with the same trust: owner `itamaro`, repository
+`libpython-linkcheck`, workflow `release.yml`, GitHub environment `pypi`. No
+API tokens are stored anywhere.
 
 1. Release commit: set `__version__` in `src/libpython_linkcheck/_version.py`
-   to the release version (e.g. `0.1.0a1`), set the same version (and the
-   pinned dependency) in `autoenable/pyproject.toml`, and add the release
-   notes to `CHANGELOG.md`.
+   to the release version (e.g. `0.1.0a1`), set the same version and the
+   exact dependency pin (`libpython-linkcheck==<version>`) in
+   `autoenable/pyproject.toml`, and add the release notes to `CHANGELOG.md`.
 2. On that exact tree, run locally:
    ```sh
    make check
@@ -233,8 +236,10 @@ GitHub environment `pypi`. No API tokens are stored anywhere.
    make test-linux PACKAGE=wheelhouse/libpython_linkcheck-<version>-cp312-abi3-manylinux_2_28_<arch>.whl LINUX_PYTHONS="3.12 3.13 3.14 3.15"
    make test-linux-freethreaded PACKAGE=wheelhouse FT_PYTHON=3.14
    make test-linux-freethreaded PACKAGE=wheelhouse FT_PYTHON=3.15
+   make test-autoenable-install
    ```
-   (`make check` runs `make dist`, which builds and smoke-tests both artifacts.)
+   (`make check` runs `make dist`, which builds and smoke-tests the core's
+   sdist and pure wheel and the companion's sdist and wheel.)
 3. Commit, push to `main`, and wait until CI for that commit is green.
 4. Tag that commit and push the tag:
    ```sh
@@ -242,18 +247,29 @@ GitHub environment `pypi`. No API tokens are stored anywhere.
    git push origin v<version>
    ```
 5. `.github/workflows/release.yml` checks the tag equals `v` + `__version__`
-   and is on `main`, builds and tests the artifacts once (`dist.yml`), then the
-   `publish` job (environment `pypi`) uploads those exact files. Follow it with
-   `gh run watch`.
-6. Confirm PyPI serves exactly the workflow's artifact (compare sha256 of
-   `gh run download <run-id> -n dist` with
-   `https://pypi.org/pypi/libpython-linkcheck/<version>/json`), then verify
-   from clean containers: `make verify-pypi VERSION=<version>` installs the
-   release from production PyPI (no mounts, no cache) on 3.12 and 3.15 and
-   runs the README "Try it" block.
-7. Post-release commit: bump `_version.py` and `autoenable/pyproject.toml`
-   to the next `.dev0` version and open a new "Unreleased" section in
-   `CHANGELOG.md`.
+   (and the companion's version and pin), and is on `main`, builds and tests
+   the artifacts once (`dist.yml`), then uploads those exact files
+   (environment `pypi`): the `publish` job uploads the `dist` artifact
+   (the core), then `publish-autoenable` uploads the `autoenable` artifact
+   (the companion). Follow it with `gh run watch`. If the companion's upload
+   fails after the core's succeeded, fix the cause (e.g. its Trusted
+   Publisher) and use "Re-run failed jobs" on that run
+   (`gh run rerun <run-id> --failed`): it re-runs only `publish-autoenable`,
+   with the same artifact. Never re-run the whole workflow, which would
+   rebuild the files.
+6. Confirm PyPI serves exactly the workflow's artifacts: compare the sha256
+   of `gh run download <run-id> -n dist` with
+   `https://pypi.org/pypi/libpython-linkcheck/<version>/json`, and of
+   `gh run download <run-id> -n autoenable` with
+   `https://pypi.org/pypi/libpython-linkcheck-autoenable/<version>/json`.
+   Then verify from clean containers: `make verify-pypi VERSION=<version>`
+   installs the release from production PyPI (no cache) on 3.12 and 3.15
+   and runs the README "Try it" block (no mounts), then installs only
+   `libpython-linkcheck-autoenable==<version>` on 3.12 and 3.15t and runs the
+   companion install test.
+7. Post-release commit: bump `_version.py`, and the version and pin in
+   `autoenable/pyproject.toml`, to the next `.dev0` version and open a new
+   "Unreleased" section in `CHANGELOG.md`.
 
 Never re-tag or delete a published version; PyPI does not allow re-uploading
 a version. Fix forward with a new version.
