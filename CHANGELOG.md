@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The opt-in companion `libpython-linkcheck-autoenable` is published on
+  PyPI, released together with each version and pinning it exactly:
+  `pip install libpython-linkcheck-autoenable` enables the check at startup.
 - Python 3.11 is no longer supported; the minimum is 3.12.
 - The C implementation uses the Stable ABI. Three native wheels per
   architecture replace the six version-specific ones: `cp312-abi3`
@@ -21,7 +24,8 @@
     of filters the program had installed, such as `warnings.simplefilter("ignore")`.
   - If CPython dropped them, the first `enable()` call applies them to the
     filter list in effect and, inside `warnings.catch_warnings()`, also to
-    the list that block restores; later calls never add them again, so
+    the interpreter's original filter list, which the outermost block
+    restores; later calls never add them again, so
     `warnings.resetwarnings()` stays in effect. From the autoenable `.pth` /
     `.start` files, which now call `libpython_linkcheck._autoenable()` and
     run before `sitecustomize` and program code, they get the precedence of

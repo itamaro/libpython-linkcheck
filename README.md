@@ -29,6 +29,15 @@ CPython 3.12–3.14, a `cp314t` wheel for free-threaded 3.14, and one
 that CPython 3.15 bundles). Elsewhere pip installs a pure-Python wheel with
 the same behavior.
 
+Installing the package activates nothing. To enable the check at startup in
+every interpreter that uses an environment, also install the opt-in
+companion, which pins the same version of the package
+([Activating it automatically](#activating-it-automatically)):
+
+```sh
+pip install libpython-linkcheck-autoenable
+```
+
 ## Usage
 
 ```python
@@ -150,7 +159,7 @@ every program run by an interpreter, choose one of these explicitly:
 | User code | `libpython_linkcheck.enable()` | the calling interpreter, from that call on | — |
 | `sitecustomize` | `sitecustomize.py` in site-packages calling `enable()` | interpreters using that site-packages (a venv's own, or the base installation's) | `-S` |
 | `usercustomize` | `usercustomize.py` in the user site directory calling `enable()` | that user's interpreters outside venvs | `-s`, `-I`, `-S`, venvs |
-| `.pth` + `.start` | install `libpython-linkcheck-autoenable` (see `autoenable/`), or copy its two files into site-packages | interpreters using that site-packages, before `sitecustomize` and user code | `-S` |
+| `.pth` + `.start` | `pip install libpython-linkcheck-autoenable` (below) | interpreters using that site-packages, before `sitecustomize` and user code | `-S` |
 | Executable | `LibpythonLinkcheck_Install()` in the program's `main()` (next section) | the whole runtime, including subinterpreters | — (works under `-I -S`) |
 
 Every path can be combined with the others: whichever runs first installs the
@@ -161,13 +170,23 @@ subinterpreter needs its own `enable()` call. Extension modules imported
 before activation, including by `.pth` files processed earlier, are not
 inspected.
 
-`libpython-linkcheck-autoenable` is not on PyPI; build it from the
-repository with `python -m build --wheel autoenable`. On Python 3.12–3.14 its
-`.pth` file's import line calls `libpython_linkcheck._autoenable()`, which is
-`enable()` with the warning-option precedence described in
+```sh
+pip install libpython-linkcheck-autoenable
+```
+
+installs the companion project `libpython-linkcheck-autoenable` (source in
+[`autoenable/`](https://github.com/itamaro/libpython-linkcheck/tree/main/autoenable)), released together with this package and
+pinning its exact version, so pip installs the matching
+`libpython-linkcheck` too. It contains only two startup files. On Python
+3.12–3.14 its `.pth` file's import line calls
+`libpython_linkcheck._autoenable()`, which is `enable()` with the
+warning-option precedence described in
 [Controlling the warning](#controlling-the-warning); on 3.15 and later the
 matching [PEP 829](https://peps.python.org/pep-0829/) `.start` file
-(`libpython_linkcheck:_autoenable`) does, and disables that import line.
+(`libpython_linkcheck:_autoenable`) does, and disables that import line. To
+stop activating the check, uninstall only the companion
+(`pip uninstall libpython-linkcheck-autoenable`); `libpython-linkcheck` stays
+installed and inactive.
 
 ## Embedding: a hook installed before Python starts
 
