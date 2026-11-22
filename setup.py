@@ -25,10 +25,12 @@ from setuptools.command.build_ext import build_ext
 
 CSRC = "src/csrc"
 
-#: (define_macros, bdist_wheel py_limited_api) per target.
+#: (define_macros, bdist_wheel py_limited_api) per target. The abi3t build
+#: names both ABIs, as PEP 803 recommends for a wheel tagged abi3.abi3t,
+#: instead of relying on the headers to derive one from the other.
 TARGETS = {
     "abi3": ([("Py_LIMITED_API", "0x030C0000")], "cp312"),
-    "abi3t": ([("Py_TARGET_ABI3T", "0x030F0000")], "cp315"),
+    "abi3t": ([("Py_LIMITED_API", "0x030F0000"), ("Py_TARGET_ABI3T", "0x030F0000")], "cp315"),
     "full": ([], None),
 }
 
