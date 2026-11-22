@@ -5,6 +5,9 @@
 #     without a native wheel), from `build`;
 #   - native manylinux_2_28 wheels for x86_64 and aarch64, from `wheels`
 #     (cibuildwheel + auditwheel; see [tool.cibuildwheel] in pyproject.toml).
+# The opt-in companion project, libpython-linkcheck-autoenable (sdist and
+# universal wheel, from `build`), is kept apart as the "autoenable" artifact;
+# its name must not match dist-*, which `check` merges into "dist".
 name: dist
 
 on:
@@ -24,7 +27,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.15"
-      - name: Build sdist + pure wheel, twine check, content check, smoke-test
+      - name: Build sdists + pure wheels, twine check, content checks, smoke-test
         run: sh ci/build-dist.sh
         env:
           PYTHON: python
@@ -32,6 +35,11 @@ jobs:
         with:
           name: dist-sdist
           path: dist/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: autoenable
+          path: autoenable-dist/
           if-no-files-found: error
 
   wheels:

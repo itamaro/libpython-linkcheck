@@ -14,9 +14,10 @@ Keep this guide current: any commit that changes a workflow documented here
   on Linux; the interpreter provides those symbols).
 - Layout: `src/libpython_linkcheck/` (package), `src/csrc/` (C sources,
   shipped in the sdist only), `tests/` (pytest), `autoenable/` (the opt-in
-  `libpython-linkcheck-autoenable` distribution: a `.pth` + `.start` pair;
-  built and checked by `make dist`, never published by the release workflow;
-  its version is kept equal to `_version.py`),
+  `libpython-linkcheck-autoenable` companion project: a `.pth` + `.start`
+  pair, built and checked by `make dist` into `autoenable-dist/`; its
+  version, and its exact dependency on the core, are kept equal to
+  `_version.py`),
   `ci/` (scripts shared by `make` and GitHub Actions), `.github/workflows/`.
 - Two implementations of the same behavior:
   - C (`src/csrc/`): `linkcheck_elf.[ch]` is plain
@@ -106,7 +107,7 @@ All targets work from a fresh checkout. Every target exits non-zero on failure.
 | `make test-linux-freethreaded` | The Linux suite on a free-threaded CPython (`FT_PYTHON=3.15` by default; also `3.14`): `ci/test-freethreaded.sh` builds the image's exact CPython release with `--disable-gil --enable-shared` from the python.org tarball, verified against the image's `PYTHON_SHA256` (`ci/build-freethreaded.sh`), caches it in the `linkcheck-python-ft` volume (the first run takes about 10 minutes), and checks that importing the package keeps the GIL disabled. Accepts `PACKAGE` like `test-linux`. |
 | `make test-linux PACKAGE=wheelhouse` | Same, against a directory of wheels: pip installs the one matching each container's interpreter (`--no-index --only-binary`). |
 | `make bench-linux` | The audit-hook overhead benchmark (`ci/bench_hook.py`, via `ci/run-tests.sh` with `LINKCHECK_BENCH=1`) in `python:<ver>-trixie` containers (`BENCH_PYTHONS="3.12 3.15"`): ns per unrelated audit event, per filename-less `import` event, and per clean extension re-import, with no hook, the pure-Python hook, and the C hook. Accepts `PACKAGE` like `test-linux`. Run it before and after changes to the hook's hot path and report both. |
-| `make dist` | `ci/build-dist.sh`: build the sdist, then the pure-Python wheel from the sdist (`LIBPYTHON_LINKCHECK_PURE=1`), `twine check --strict`, `ci/check_dist.py` content/metadata checks, and install-and-import smoke tests of each artifact from outside the checkout (installing the sdist compiles the C implementation). Also builds the `autoenable/` wheel into a scratch directory, checks it (`ci/check_autoenable.py`), and checks that installing it enables the hook at startup. |
+| `make dist` | `ci/build-dist.sh`: build the sdist, then the pure-Python wheel from the sdist (`LIBPYTHON_LINKCHECK_PURE=1`), `twine check --strict`, `ci/check_dist.py` content/metadata checks, and install-and-import smoke tests of each artifact from outside the checkout (installing the sdist compiles the C implementation). Also builds the `autoenable/` companion's sdist, and its universal wheel from that sdist, into `autoenable-dist/`, runs `twine check --strict` and `ci/check_autoenable.py` on them (exact contents, version and dependency pin), and checks that installing the wheel enables the hook at startup. |
 | `make wheels` | Native wheels for the host architecture into `wheelhouse/`: cibuildwheel (pinned in the `wheels` dependency group, configured in `[tool.cibuildwheel]`) in Podman builds the three wheels of the matrix in `manylinux_2_28`, runs `auditwheel show`/`repair --only-plat --plat manylinux_2_28_<arch>`, audits each with `ci/check_abi.py` (every imported CPython symbol is in the Stable ABI of the wheel's Python tag, per CPython's pinned `Misc/stable_abi.toml`; no `PySys_AddAuditHook`; the right entry point; abi3audit `--strict` on `cp312-abi3`), and runs `ci/wheel_smoke.py` (native implementation, `_native` has no libpython `DT_NEEDED`, the GIL stays disabled on free-threaded builds, the hook blocks a synthetic linked object). On an Apple silicon Mac this builds aarch64; CI builds x86_64 too. |
 | `make check` | `lint` + `test` + `test-linux` + `dist`. |
 | `make verify-pypi VERSION=<v>` | Post-release: install `<v>` from production PyPI in fresh containers and run the README demo. |
@@ -154,7 +155,9 @@ pure-Python wheel.
 - `macos`: native test run on 3.12 and 3.15.
 - `dist` (reusable `.github/workflows/dist.yml`), which builds every
   distribution once:
-  - `build`: the sdist and pure-Python wheel (`ci/build-dist.sh`);
+  - `build`: the sdist and pure-Python wheel, and the companion's sdist and
+    wheel, which it uploads separately as the `autoenable` artifact
+    (`ci/build-dist.sh`);
   - `wheels`: native manylinux_2_28 wheels for x86_64 and aarch64
     (cibuildwheel; same configuration as `make wheels`);
   - `check`: `twine check --strict`, `ci/check_dist.py --native-wheels`

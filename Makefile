@@ -108,4 +108,4 @@ verify-pypi:
 	VERSION=$(VERSION) PODMAN=$(PODMAN) PYTHONS="$(LINUX_PYTHONS)" sh ci/verify-pypi.sh
 
 clean:
-	rm -rf build dist wheelhouse src/*.egg-info .pytest_cache .ruff_cache
+	rm -rf build dist autoenable-dist wheelhouse src/*.egg-info .pytest_cache .ruff_cache

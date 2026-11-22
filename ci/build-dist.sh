@@ -1,20 +1,24 @@
 #!/bin/sh
-# Build the sdist and wheel into ./dist, validate them, and smoke-test
-# installing each one into a fresh venv outside the checkout.
+# Build the sdist and pure-Python wheel into ./dist, and the autoenable
+# companion's sdist and wheel into ./autoenable-dist, validate them, and
+# smoke-test installing each one into a fresh venv outside the checkout.
 #
-# The wheel is built *from the sdist* (python -m build's default), which
+# Each wheel is built *from its sdist* (python -m build's default), which
 # proves the sdist contains everything needed to build.
 #
 # Environment:
 #   PYTHON   interpreter to build and smoke-test with (default: python3)
 #   OUTDIR   output directory (default: dist)
-#   SKIP_BUILD=1  only check/smoke-test artifacts already in $OUTDIR
+#   AUTOENABLE_OUTDIR  output directory for the companion (default: autoenable-dist)
+#   SKIP_BUILD=1  only check/smoke-test artifacts already in the output directories
 set -eu
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
 python=${PYTHON:-python3}
 outdir=${OUTDIR:-dist}
 case "$outdir" in /*) ;; *) outdir=$repo/$outdir ;; esac
+autoenable_outdir=${AUTOENABLE_OUTDIR:-autoenable-dist}
+case "$autoenable_outdir" in /*) ;; *) autoenable_outdir=$repo/$autoenable_outdir ;; esac
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/linkcheck-dist.XXXXXX")
 trap 'rm -rf "$work"' EXIT INT TERM
@@ -51,15 +55,19 @@ for artifact in "$outdir"/*.whl "$outdir"/*.tar.gz; do
     (cd "$work" && LINKCHECK_EXPECT_IMPLEMENTATION=$expect "$work/smoke/bin/python" -I "$repo/ci/smoke.py")
 done
 
-# The opt-in autoenable distribution: built and checked here, but kept out
-# of $outdir so the release never publishes it.
+# The opt-in autoenable companion, a separate project on PyPI: kept out of
+# $outdir, which holds only libpython-linkcheck's own distributions.
 echo "--- autoenable"
-"$tools" -m build --wheel --outdir "$work/autoenable" "$repo/autoenable"
-"$tools" "$repo/ci/check_autoenable.py" "$repo" "$work"/autoenable/*.whl
+if [ "${SKIP_BUILD:-0}" != 1 ]; then
+    rm -rf "$autoenable_outdir"
+    "$tools" -m build --outdir "$autoenable_outdir" "$repo/autoenable"
+fi
+"$tools" -m twine check --strict "$autoenable_outdir"/*
+"$tools" "$repo/ci/check_autoenable.py" "$repo" "$autoenable_outdir"
 rm -rf "$work/smoke"
 "$python" -m venv "$work/smoke"
 "$work/smoke/bin/python" -m pip --disable-pip-version-check -q install --no-index \
-    "$outdir"/*-py3-none-any.whl "$work"/autoenable/*.whl
+    "$outdir"/*-py3-none-any.whl "$autoenable_outdir"/*.whl
 (cd "$work" && "$work/smoke/bin/python" -I -c '
 import sys
 assert "libpython_linkcheck" in sys.modules, "not imported at startup"
@@ -68,4 +76,4 @@ assert libpython_linkcheck.is_enabled(), "not enabled at startup"
 assert not libpython_linkcheck.enable()
 print("autoenable smoke OK: enabled at startup on", sys.version.split()[0])
 ')
-echo "dist OK: $(ls "$outdir" | tr '\n' ' ')"
+echo "dist OK: $(ls "$outdir" "$autoenable_outdir" | tr '\n' ' ')"

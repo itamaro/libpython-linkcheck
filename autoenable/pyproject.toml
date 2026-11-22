@@ -2,13 +2,12 @@
 #
 # Installing this distribution makes every interpreter that processes its
 # site-packages directory (venvs included; not -S) call
-# libpython_linkcheck.enable() at startup. It contains only two startup files
-# at the root of site-packages; installing libpython-linkcheck by itself never
-# activates anything.
+# libpython_linkcheck._autoenable() (enable(), see README.md) at startup. It
+# contains only two startup files at the root of site-packages; installing
+# libpython-linkcheck by itself never activates anything.
 #
-# Not published to PyPI: build it with `python -m build --wheel autoenable`
-# (or copy the two files into site-packages yourself). Its version must equal
-# libpython-linkcheck's (checked by ci/build-dist.sh).
+# Its version, and its exact dependency on libpython-linkcheck, must equal
+# libpython-linkcheck's __version__ (checked by ci/check_autoenable.py).
 [build-system]
 requires = ["hatchling==1.33.0"]
 build-backend = "hatchling.build"
@@ -21,7 +20,32 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
+authors = [{ name = "Itamar Oren" }]
+keywords = ["libpython", "elf", "dt_needed", "extension", "audit-hook", "linker"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = ["libpython-linkcheck==0.1.0a3.dev0"]
+
+[project.urls]
+Homepage = "https://github.com/itamaro/libpython-linkcheck"
+Source = "https://github.com/itamaro/libpython-linkcheck/tree/main/autoenable"
+Issues = "https://github.com/itamaro/libpython-linkcheck/issues"
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "libpython_linkcheck_autoenable.pth",
+    "libpython_linkcheck_autoenable.start",
+    "README.md",
+    "LICENSE",
+]
 
 [tool.hatch.build.targets.wheel]
 bypass-selection = true

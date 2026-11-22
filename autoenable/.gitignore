@@ -1,0 +1,3 @@
+# Build outputs of `python -m build autoenable` (hatchling also ships this file in the sdist).
+/dist/
+/build/
