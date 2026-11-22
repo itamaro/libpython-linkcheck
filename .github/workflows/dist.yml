@@ -187,6 +187,48 @@ jobs:
           export PACKAGE
           sh ci/run-tests.sh
 
+  # The companion as users install it: only libpython-linkcheck-autoenable,
+  # by project name, from the exact built files, so pip must resolve its
+  # pinned core to this interpreter's wheel. Keep in sync with
+  # AUTOENABLE_PYTHONS in the Makefile.
+  test-autoenable:
+    name: test-autoenable (${{ matrix.python }}${{ matrix.freethreaded && 't' || '' }}, x86_64)
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { python: "3.12", freethreaded: false }
+          - { python: "3.15", freethreaded: true }
+    runs-on: ubuntu-24.04
+    container: docker.io/library/python:${{ matrix.python }}-trixie
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Image's CPython release
+        id: release
+        run: echo "version=$PYTHON_VERSION" >> "$GITHUB_OUTPUT"
+      - name: Cache the free-threaded build
+        if: matrix.freethreaded
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /opt/python-ft
+          key: python-ft-${{ steps.release.outputs.version }}-x86_64-${{ hashFiles('ci/build-freethreaded.sh') }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: autoenable
+          path: autoenable-dist/
+      - name: Install the companion by name; check startup, -S, and uninstalling it
+        env:
+          FREETHREADED: ${{ matrix.freethreaded && '1' || '0' }}
+          FIND_LINKS: dist autoenable-dist
+        run: sh ci/test-autoenable-install.sh
+
   test-freethreaded:
     name: test ${{ matrix.package }} (${{ matrix.python }}t, ${{ matrix.arch }})
     needs: check

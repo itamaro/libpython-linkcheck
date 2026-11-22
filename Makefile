@@ -27,7 +27,8 @@ help:
 	@echo "make test-linux-uv-python  Linux suite on uv-managed (python-build-standalone) CPythons (UV_PYTHONS)"
 	@echo "make test-linux-freethreaded  Linux suite on a free-threaded CPython built from source (FT_PYTHON=3.15)"
 	@echo "make wheels      Build + repair native manylinux wheels for this machine's arch (cibuildwheel + Podman)"
-	@echo "make verify-pypi VERSION=x  Install x from PyPI in fresh containers, run the README demo"
+	@echo "make test-autoenable-install  Install the built companion by name in fresh 3.12 / 3.15t containers (after make wheels dist)"
+	@echo "make verify-pypi VERSION=x  Install x from PyPI in fresh containers: README demo + companion install test"
 
 check: lint test test-linux dist
 
@@ -104,8 +105,26 @@ CIBUILDWHEEL ?= uv run --isolated --only-group wheels cibuildwheel
 wheels:
 	CIBW_CONTAINER_ENGINE=$(PODMAN) $(CIBUILDWHEEL) --platform linux --output-dir wheelhouse
 
+# Install the built autoenable companion by project name in a fresh venv per
+# interpreter ("t" = free-threaded, built from source like
+# test-linux-freethreaded), from the local wheelhouse/, dist/ and
+# autoenable-dist/ only (run `make wheels dist` first). Keep
+# AUTOENABLE_PYTHONS in sync with the test-autoenable job in dist.yml.
+AUTOENABLE_PYTHONS ?= 3.12 3.15t
+AUTOENABLE_FIND_LINKS ?= wheelhouse dist autoenable-dist
+test-autoenable-install:
+	@set -e; for v in $(AUTOENABLE_PYTHONS); do \
+	    case $$v in *t) ft=1; image=$${v%t} ;; *) ft=0; image=$$v ;; esac; \
+	    $(PODMAN) run --rm --pull=missing -e FREETHREADED=$$ft \
+	        -e FIND_LINKS="$(foreach d,$(AUTOENABLE_FIND_LINKS),/src/$(d))" \
+	        -v "$(CURDIR)":/src:ro \
+	        -v linkcheck-python-ft:/opt/python-ft \
+	        $(LINUX_IMAGE):$$image-$(LINUX_VARIANT) sh /src/ci/test-autoenable-install.sh; \
+	done
+
 verify-pypi:
-	VERSION=$(VERSION) PODMAN=$(PODMAN) PYTHONS="$(LINUX_PYTHONS)" sh ci/verify-pypi.sh
+	VERSION=$(VERSION) PODMAN=$(PODMAN) PYTHONS="$(LINUX_PYTHONS)" \
+		AUTOENABLE_PYTHONS="$(AUTOENABLE_PYTHONS)" sh ci/verify-pypi.sh
 
 clean:
 	rm -rf build dist autoenable-dist wheelhouse src/*.egg-info .pytest_cache .ruff_cache

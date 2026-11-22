@@ -110,7 +110,8 @@ All targets work from a fresh checkout. Every target exits non-zero on failure.
 | `make dist` | `ci/build-dist.sh`: build the sdist, then the pure-Python wheel from the sdist (`LIBPYTHON_LINKCHECK_PURE=1`), `twine check --strict`, `ci/check_dist.py` content/metadata checks, and install-and-import smoke tests of each artifact from outside the checkout (installing the sdist compiles the C implementation). Also builds the `autoenable/` companion's sdist, and its universal wheel from that sdist, into `autoenable-dist/`, runs `twine check --strict` and `ci/check_autoenable.py` on them (exact contents, version and dependency pin), and checks that installing the wheel enables the hook at startup. |
 | `make wheels` | Native wheels for the host architecture into `wheelhouse/`: cibuildwheel (pinned in the `wheels` dependency group, configured in `[tool.cibuildwheel]`) in Podman builds the three wheels of the matrix in `manylinux_2_28`, runs `auditwheel show`/`repair --only-plat --plat manylinux_2_28_<arch>`, audits each with `ci/check_abi.py` (every imported CPython symbol is in the Stable ABI of the wheel's Python tag, per CPython's pinned `Misc/stable_abi.toml`; no `PySys_AddAuditHook`; the right entry point; abi3audit `--strict` on `cp312-abi3`), and runs `ci/wheel_smoke.py` (native implementation, `_native` has no libpython `DT_NEEDED`, the GIL stays disabled on free-threaded builds, the hook blocks a synthetic linked object). On an Apple silicon Mac this builds aarch64; CI builds x86_64 too. |
 | `make check` | `lint` + `test` + `test-linux` + `dist`. |
-| `make verify-pypi VERSION=<v>` | Post-release: install `<v>` from production PyPI in fresh containers and run the README demo. |
+| `make test-autoenable-install` | The companion as users install it (`ci/test-autoenable-install.sh`): in fresh `python:<ver>-trixie` containers (`AUTOENABLE_PYTHONS="3.12 3.15t"`; `t` uses the free-threaded build of `make test-linux-freethreaded`), a fresh venv installs only `libpython-linkcheck-autoenable` by project name from `wheelhouse/`, `dist/` and `autoenable-dist/` (`--no-index`), so pip must resolve the pinned core to the matrix wheel; then `ci/autoenable_install_check.py` checks that a fresh launch has the native hook enabled at startup (and that it blocks a synthetic linked extension), that `-S` skips activation, and that after uninstalling only the companion the core is still installed and the next launch has no hook. Run `make wheels dist` first. |
+| `make verify-pypi VERSION=<v>` | Post-release: from production PyPI with no pip cache, install `<v>` in fresh containers and run the README demo (`LINUX_PYTHONS`), then run the companion install test above against `libpython-linkcheck-autoenable==<v>` (`AUTOENABLE_PYTHONS`). |
 
 `ci/run-tests.sh` is the single test entry point for `make` and GitHub
 Actions. It copies the checkout to a scratch directory, installs the package
@@ -133,7 +134,8 @@ pure-Python wheel.
   (zizmor checks the workflows), `make dist`,
   `make wheels` plus `make test-linux PACKAGE=wheelhouse` when the native
   build or wheel configuration changes,
-  and `make test-linux`.
+  `make wheels dist test-autoenable-install` when the companion or how the
+  distributions install changes, and `make test-linux`.
 - Docs only: `make lint`. If README changes, also `make dist` (it is the
   PyPI long description checked by `twine check --strict`) and
   `make test-linux`: `tests/test_readme.py` runs the README's "Try it" block
@@ -177,7 +179,11 @@ pure-Python wheel.
     3.12 and 3.15;
   - `test-freethreaded`: on free-threaded 3.14t and 3.15t, the
     `cp314-cp314t` and `cp315-abi3.abi3t` wheels as files on x86_64 and
-    aarch64, and the set by project name on x86_64.
+    aarch64, and the set by project name on x86_64;
+  - `test-autoenable`: `ci/test-autoenable-install.sh` (see
+    `make test-autoenable-install`) on 3.12 and free-threaded 3.15t
+    (x86_64), installing only the companion by project name from the `dist`
+    and `autoenable` artifacts.
 
   `ci/run-tests.sh` fails unless the installed WHEEL tags are the expected
   ones: a wheel file's own; for a directory, the matrix wheel for that

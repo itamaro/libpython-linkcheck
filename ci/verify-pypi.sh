@@ -1,16 +1,23 @@
 #!/bin/sh
-# Post-release check: in a fresh container (no bind mounts, no pip cache),
-# install libpython-linkcheck==$VERSION from production PyPI and run the
-# README's "Try it" block, checking its key results.
+# Post-release check, from production PyPI with no pip cache:
+#   1. in a fresh container (no bind mounts), install
+#      libpython-linkcheck==$VERSION and run the README's "Try it" block,
+#      checking its key results;
+#   2. in a fresh container per AUTOENABLE_PYTHONS entry ("t" = free-threaded),
+#      install only libpython-linkcheck-autoenable==$VERSION and run
+#      ci/test-autoenable-install.sh (ci/ and tests/ are mounted read-only
+#      for the checker; the packages come from PyPI).
 #
 # Usage: VERSION=0.1.0a1 ci/verify-pypi.sh   (or: make verify-pypi VERSION=...)
-# Environment: PODMAN (default podman), PYTHONS (default "3.12 3.15").
+# Environment: PODMAN (default podman), PYTHONS (default "3.12 3.15"),
+#              AUTOENABLE_PYTHONS (default "3.12 3.15t").
 set -eu
 
 : "${VERSION:?set VERSION, e.g. VERSION=0.1.0a1}"
 repo=$(cd "$(dirname "$0")/.." && pwd)
 podman=${PODMAN:-podman}
 pythons=${PYTHONS:-3.12 3.15}
+autoenable_pythons=${AUTOENABLE_PYTHONS:-3.12 3.15t}
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/linkcheck-verify.XXXXXX")
 trap 'rm -rf "$work"' EXIT INT TERM
@@ -41,4 +48,12 @@ for v in $pythons; do
         grep -q "^linked\..*\.so: DT_NEEDED libpython" /tmp/out
         echo "verify OK: $(python -VV)"
     ' < "$work/demo.sh"
+done
+
+for v in $autoenable_pythons; do
+    case $v in *t) ft=1 image=docker.io/library/python:${v%t}-trixie ;; *) ft=0 image=docker.io/library/python:$v-trixie ;; esac
+    "$podman" run --rm --pull=newer -e VERSION="$VERSION" -e FREETHREADED="$ft" \
+        -v "$repo/ci":/src/ci:ro -v "$repo/tests":/src/tests:ro \
+        -v linkcheck-python-ft:/opt/python-ft \
+        "$image" sh /src/ci/test-autoenable-install.sh
 done
