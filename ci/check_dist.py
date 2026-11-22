@@ -24,6 +24,7 @@ import sys
 import tarfile
 import tempfile
 import zipfile
+from email.message import Message
 from pathlib import Path
 
 DIST_NAME = "libpython-linkcheck"
@@ -36,10 +37,16 @@ SDIST_REQUIRED_TOP = [
     "MANIFEST.in",
     "PKG-INFO",
 ]
-#: CPython builds and architectures that get a native wheel ([tool.cibuildwheel]).
-NATIVE_PYTHONS = ["cp312", "cp313", "cp314", "cp314t", "cp315", "cp315t"]
+#: The native wheels ([tool.cibuildwheel], setup.py), by "<python>-<abi>" filename
+#: tag: the WHEEL Tag lines it expands to (PEP 803: abi3.abi3t is a compressed
+#: tag set), and the extension module's file name.
+NATIVE_WHEELS = {
+    "cp312-abi3": (["cp312-abi3"], "_native.abi3.so"),
+    "cp314-cp314t": (["cp314-cp314t"], "_native.cpython-314t-{arch}-linux-gnu.so"),
+    "cp315-abi3.abi3t": (["cp315-abi3", "cp315-abi3t"], "_native.abi3t-{arch}-linux-gnu.so"),
+}
 NATIVE_ARCHES = ["x86_64", "aarch64"]
-NATIVE_TAG = re.compile(r"(cp3\d+)-(cp3\d+t?)-manylinux_2_28_(x86_64|aarch64)")
+NATIVE_PLATFORM = re.compile(r"manylinux_2_28_(x86_64|aarch64)")
 SDIST_FORBIDDEN_PREFIXES = [".github/", ".git/", "CLAUDE.md", "AGENTS.md", "Makefile", "ci/"]
 
 
@@ -106,8 +113,37 @@ def check_sdist(repo: Path, sdist: Path, version: str) -> None:
     print(f"check_dist: {sdist.name}: {len(names)} files OK")
 
 
+def check_native_wheel(
+    zf: zipfile.ZipFile, wheel: Path, tags: list[str], wheel_meta: Message, shared: list[str]
+) -> str:
+    """Tags, WHEEL metadata, extension file name and linkage; returns "<python>-<abi>-<arch>"."""
+    # name-version-python-abi-platform.whl (no build tag)
+    _, _, python, abi, platform = wheel.name.removesuffix(".whl").split("-")
+    key = f"{python}-{abi}"
+    if key not in NATIVE_WHEELS or not (m := NATIVE_PLATFORM.fullmatch(platform)):
+        fail(f"{wheel.name}: unexpected native wheel tag {key}-{platform}")
+    arch = m.group(1)
+    expanded, ext_name = NATIVE_WHEELS[key]
+    expected_tags = [f"{t}-{platform}" for t in expanded]
+    if sorted(tags) != expected_tags:
+        fail(f"{wheel.name}: WHEEL tags {tags}, expected {expected_tags}")
+    if wheel_meta.get("Root-Is-Purelib") != "false":
+        fail(f"{wheel.name}: native wheel has Root-Is-Purelib {wheel_meta['Root-Is-Purelib']}")
+    expected_shared = [f"{PROJECT}/{ext_name.format(arch=arch)}"]
+    if shared != expected_shared:
+        fail(f"{wheel.name}: shared objects {shared}, expected {expected_shared}")
+    with tempfile.TemporaryDirectory() as tmp:
+        for name in shared:
+            path = Path(zf.extract(name, tmp))
+            needed = py_read_needed(path)
+            if [n for n in needed if py_is_libpython(n)]:
+                fail(f"{wheel.name}: {name} links libpython: DT_NEEDED {needed}")
+            print(f"check_dist: {wheel.name}: {name}: DT_NEEDED {needed}")
+    return f"{key}-{arch}"
+
+
 def check_wheel(repo: Path, wheel: Path, version: str) -> str | None:
-    """Check one wheel; return "<abi>-<arch>" for a native wheel, None if pure."""
+    """Check one wheel; return "<python>-<abi>-<arch>" for a native wheel, None if pure."""
     with zipfile.ZipFile(wheel) as zf:
         names = set(zf.namelist())
         dist_info = f"{PROJECT}-{version}.dist-info"
@@ -132,20 +168,9 @@ def check_wheel(repo: Path, wheel: Path, version: str) -> str | None:
                 fail(f"{wheel.name}: pure-Python wheel has tags {tags}")
             print(f"check_dist: {wheel.name}: {len(names)} files OK")
             return None
-        if len(tags) != 1 or not (m := NATIVE_TAG.fullmatch(tags[0])):
-            fail(f"{wheel.name}: native wheel tags {tags} are not one manylinux_2_28 CPython tag")
-        if [n for n in shared if not n.startswith(f"{PROJECT}/_native.")]:
-            fail(f"{wheel.name}: unexpected shared objects {shared} (vendored libraries?)")
-        with tempfile.TemporaryDirectory() as tmp:
-            for name in shared:
-                path = Path(zf.extract(name, tmp))
-                needed = py_read_needed(path)
-                if [n for n in needed if py_is_libpython(n)]:
-                    fail(f"{wheel.name}: {name} links libpython: DT_NEEDED {needed}")
-                print(f"check_dist: {wheel.name}: {name}: DT_NEEDED {needed}")
-    abi = m.group(2)
+        key = check_native_wheel(zf, wheel, tags, wheel_meta, shared)
     print(f"check_dist: {wheel.name}: {len(names)} files OK")
-    return f"{abi}-{m.group(3)}"
+    return key
 
 
 def main() -> None:
@@ -183,7 +208,7 @@ def main() -> None:
     if len(native) != len(set(native)):
         fail(f"duplicate native wheels: {sorted(native)}")
     if expect_native:
-        expected = {f"{py}-{arch}" for py in NATIVE_PYTHONS for arch in NATIVE_ARCHES}
+        expected = {f"{key}-{arch}" for key in NATIVE_WHEELS for arch in NATIVE_ARCHES}
         if set(native) != expected:
             fail(
                 f"native wheels: missing {sorted(expected - set(native))}, "

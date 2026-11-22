@@ -3,6 +3,16 @@
 ## Unreleased
 
 - Python 3.11 is no longer supported; the minimum is 3.12.
+- The C implementation uses the Stable ABI. Three native wheels per
+  architecture replace the six version-specific ones: `cp312-abi3`
+  (GIL-enabled 3.12 and later), `cp314-cp314t` (free-threaded 3.14), and
+  `cp315-abi3.abi3t` (PEP 803: GIL-enabled and free-threaded 3.15 and later),
+  so future CPython releases are covered without a new release. Installing
+  the 3.15 wheel on a free-threaded build needs an installer that knows the
+  abi3t tag (such as the pip that CPython 3.15 bundles); building from the
+  sdist needs setuptools 84.2.1+.
+- Embedders now also compile `src/csrc/linkcheck_embed.c`, which holds
+  `LibpythonLinkcheck_Install()` (its signature and behavior are unchanged).
 - Tested on uv-managed CPython (python-build-standalone) 3.12 and 3.15, whose executable is linked statically although a shared libpython
   ships alongside.
 - A `-W` / `PYTHONWARNINGS` entry naming `libpython_linkcheck.LibpythonLinkWarning`

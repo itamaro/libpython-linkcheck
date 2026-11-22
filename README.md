@@ -20,9 +20,14 @@ a `LibpythonLinkWarning` if the object's own `DT_NEEDED` entries name libpython.
 pip install libpython-linkcheck
 ```
 
-The import name is `libpython_linkcheck`. It has no dependencies. On Linux
-(x86_64 and aarch64, glibc) pip installs a native wheel that runs the check
-in C; elsewhere it installs a pure-Python wheel with the same behavior.
+The import name is `libpython_linkcheck`. It has no dependencies and needs
+CPython 3.12 or later. On Linux (x86_64 and aarch64, glibc) pip installs a
+native wheel that runs the check in C: a Stable ABI wheel (`cp312-abi3`) for
+CPython 3.12–3.14, a `cp314t` wheel for free-threaded 3.14, and one
+`cp315-abi3.abi3t` wheel for both builds of 3.15 and later (on free-threaded
+3.15 this needs an installer that knows PEP 803's abi3t tag, such as the pip
+that CPython 3.15 bundles). Elsewhere pip installs a pure-Python wheel with
+the same behavior.
 
 ## Usage
 
@@ -218,10 +223,12 @@ Supported and tested:
 - CPython 3.12 through 3.15 on Linux (x86_64 and aarch64, glibc), and the
   free-threaded builds of 3.14 and 3.15. Importing and enabling the
   package keeps the GIL disabled.
-- Distributions: native `manylinux_2_28` wheels (x86_64, aarch64) for
-  CPython 3.12–3.15 and free-threaded 3.14t/3.15t, which use the C
-  implementation; a pure-Python `py3-none-any` wheel for every other
-  platform; and an sdist, which compiles the C implementation on POSIX.
+- Distributions: native `manylinux_2_28` wheels (x86_64, aarch64), which
+  use the C implementation: `cp312-abi3` (GIL-enabled CPython 3.12 and
+  later), `cp314-cp314t` (free-threaded 3.14), and `cp315-abi3.abi3t`
+  (GIL-enabled and free-threaded 3.15 and later); a pure-Python
+  `py3-none-any` wheel for every other platform; and an sdist, which
+  compiles the C implementation on POSIX for the same targets.
 - Every activation path in [the table above](#activating-it-automatically),
   each tested in a fresh venv against a real linked extension, alone and
   combined.

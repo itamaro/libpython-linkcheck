@@ -7,6 +7,12 @@
  * "import" event passes filename=None. On a match we read the object's own
  * DT_NEEDED entries and, if one names libpython, issue LibpythonLinkWarning
  * attributed to the code that executed the import.
+ *
+ * The same source builds against the full C API (embedders, the 3.14t
+ * extension) and the Limited API (the abi3 and abi3t extensions). It uses
+ * only what the targeted ABI provides, never what the headers happen to
+ * offer: an abi3 build for 3.12 must not depend on newer functions even when
+ * it is compiled with newer headers.
  */
 #define PY_SSIZE_T_CLEAN
 #include "linkcheck_hook.h"
@@ -14,6 +20,19 @@
 #include <string.h>
 
 #include "linkcheck_elf.h"
+
+/* PyDict_GetItemStringRef() and PyDict_SetDefaultRef() are in the full API
+   from 3.13 and in the Limited API from 3.15. Free-threaded builds need
+   them: no borrowed references out of a dict that another thread may
+   change. Older targets run with a GIL only. */
+#if LPC_TARGET_API >= (defined(Py_LIMITED_API) ? 0x030F0000 : 0x030D0000)
+#define LPC_HAVE_DICT_REF_API 1
+#else
+#define LPC_HAVE_DICT_REF_API 0
+#endif
+#if defined(Py_GIL_DISABLED) && !LPC_HAVE_DICT_REF_API
+#error "free-threaded builds need PyDict_GetItemStringRef() and PyDict_SetDefaultRef()"
+#endif
 
 #define CATEGORY_NAME "libpython_linkcheck.LibpythonLinkWarning"
 
@@ -36,7 +55,7 @@ lpc_get_category(void)
         return NULL;
     }
     PyObject *category = NULL;
-#if PY_VERSION_HEX >= 0x030D0000
+#if LPC_HAVE_DICT_REF_API
     if (PyDict_GetItemStringRef(dict, CATEGORY_NAME, &category) < 0) {
         return NULL;
     }
@@ -44,7 +63,7 @@ lpc_get_category(void)
         return category;
     }
 #else
-    category = PyDict_GetItemString(dict, CATEGORY_NAME);
+    category = PyDict_GetItemString(dict, CATEGORY_NAME); /* borrowed; GIL held */
     if (category != NULL) {
         return Py_NewRef(category);
     }
@@ -64,50 +83,63 @@ lpc_get_category(void)
         Py_DECREF(created);
         return NULL;
     }
-    /* Keep whichever class won a concurrent creation race. */
-#if PY_VERSION_HEX >= 0x030D0000
+    /* Keep whichever class won a concurrent first use (another thread, or
+       the embedded hook and the package's in the same interpreter): both
+       operations are atomic, so every caller returns the stored class. */
+#if LPC_HAVE_DICT_REF_API
     if (PyDict_SetDefaultRef(dict, key, created, &category) < 0) {
         category = NULL;
     }
 #else
-    category = PyDict_SetDefault(dict, key, created);
-    Py_XINCREF(category);
+    category = PyObject_CallMethod(dict, "setdefault", "OO", key, created);
 #endif
     Py_DECREF(key);
     Py_DECREF(created);
     return category;
 }
 
-/* Same rule as CPython's warnings machinery for importlib frames. */
+/* Same rule as CPython's warnings machinery for importlib frames. Returns 1
+   or 0; never fails (errors count as "not internal"). */
 static int
-is_internal_frame(PyFrameObject *frame)
+is_internal_frame(PyObject *frame)
 {
-    PyCodeObject *code = PyFrame_GetCode(frame);
+    /* PyFrame_GetCode() is not audited, unlike the f_code attribute. */
+    PyObject *code = (PyObject *)PyFrame_GetCode((PyFrameObject *)frame);
+    PyObject *filename = PyObject_GetAttrString(code, "co_filename");
+    Py_DECREF(code);
     int internal = 0;
-    if (PyUnicode_Check(code->co_filename)) {
-        const char *s = PyUnicode_AsUTF8(code->co_filename);
-        if (s == NULL) {
-            PyErr_Clear();
-        }
-        else {
+    if (filename != NULL && PyUnicode_Check(filename)) {
+        const char *s = PyUnicode_AsUTF8AndSize(filename, NULL);
+        if (s != NULL) {
             internal = strstr(s, "importlib") != NULL && strstr(s, "_bootstrap") != NULL;
         }
     }
-    Py_DECREF(code);
+    Py_XDECREF(filename);
+    PyErr_Clear();
     return internal;
 }
 
 /* The stacklevel that makes the warnings machinery attribute the warning to
    the first non-importlib frame. When the innermost frame is internal,
-   CPython steps back one frame per level without skipping, so count them. */
+   CPython steps back one frame per level without skipping, so count them.
+   Only the warning path calls this. */
 static int
 import_site_stacklevel(void)
 {
-    PyFrameObject *frame = PyThreadState_GetFrame(PyThreadState_Get());
+    PyObject *frame = (PyObject *)PyThreadState_GetFrame(PyThreadState_Get());
     int level = 1;
     while (frame != NULL && is_internal_frame(frame)) {
-        PyFrameObject *back = PyFrame_GetBack(frame);
+        PyObject *back = PyObject_GetAttrString(frame, "f_back");
         Py_DECREF(frame);
+        frame = NULL;
+        if (back == NULL) {
+            PyErr_Clear();
+            break;
+        }
+        if (back == Py_None) {
+            Py_DECREF(back);
+            break;
+        }
         frame = back;
         level++;
     }
@@ -130,7 +162,8 @@ make_warning(PyObject *name, PyObject *filename, PyObject *needed)
     message = PyUnicode_FromFormat("extension module %R links directly to libpython: "
                                    "%U has DT_NEEDED %U",
                                    module, filename, joined);
-    if (message == NULL || (warning = PyObject_CallOneArg(category, message)) == NULL ||
+    if (message == NULL ||
+        (warning = PyObject_CallFunctionObjArgs(category, message, NULL)) == NULL ||
         (needed_tuple = PyList_AsTuple(needed)) == NULL) {
         goto done;
     }
@@ -153,14 +186,19 @@ static int
 check_extension(PyObject *name, PyObject *filename_obj)
 {
     PyObject *encoded = NULL;
-    if (!PyUnicode_FSConverter(filename_obj, &encoded)) {
+    char *path;
+    Py_ssize_t path_len;
+    if (!PyUnicode_FSConverter(filename_obj, &encoded) ||
+        PyBytes_AsStringAndSize(encoded, &path, &path_len) < 0) {
+        Py_XDECREF(encoded);
         PyErr_Clear(); /* never let the checker break an import */
         return 0;
     }
+    /* `path` points into `encoded`, which stays alive until the end. */
     lpc_needed needed;
     lpc_status st;
     Py_BEGIN_ALLOW_THREADS
-        st = lpc_read_needed(PyBytes_AS_STRING(encoded), &needed, NULL);
+        st = lpc_read_needed(path, &needed, NULL);
     Py_END_ALLOW_THREADS
     if (st != LPC_OK) {
         /* Not ELF, unreadable, or malformed: CPython's loader reports real
@@ -189,8 +227,7 @@ check_extension(PyObject *name, PyObject *filename_obj)
     if (matches == NULL) {
         goto done;
     }
-    filename =
-        PyUnicode_DecodeFSDefaultAndSize(PyBytes_AS_STRING(encoded), PyBytes_GET_SIZE(encoded));
+    filename = PyUnicode_DecodeFSDefaultAndSize(path, path_len);
     if (filename == NULL || (warning = make_warning(name, filename, matches)) == NULL) {
         goto error;
     }
@@ -222,11 +259,14 @@ done:
     return result;
 }
 
+/* Tuples are immutable, so items borrowed from the audit arguments stay
+   valid while the hook runs, with or without the GIL. */
 static int
 answer_probe(PyObject *args, const char *kind)
 {
-    if (!PyTuple_Check(args) || PyTuple_GET_SIZE(args) < 1 ||
-        !PyList_Check(PyTuple_GET_ITEM(args, 0))) {
+    PyObject *found;
+    if (!PyTuple_Check(args) || PyTuple_Size(args) < 1 ||
+        !PyList_Check(found = PyTuple_GetItem(args, 0))) {
         return 0;
     }
     PyObject *category = lpc_get_category();
@@ -237,7 +277,7 @@ answer_probe(PyObject *args, const char *kind)
     if (entry == NULL) {
         return -1;
     }
-    int rc = PyList_Append(PyTuple_GET_ITEM(args, 0), entry);
+    int rc = PyList_Append(found, entry);
     Py_DECREF(entry);
     return rc;
 }
@@ -250,14 +290,14 @@ lpc_audit(const char *event, PyObject *args, const char *kind)
         return 0;
     }
     if (strcmp(event, "import") == 0) {
-        if (!PyTuple_Check(args) || PyTuple_GET_SIZE(args) != 5) {
+        if (!PyTuple_Check(args) || PyTuple_Size(args) != 5) {
             return 0;
         }
-        PyObject *filename = PyTuple_GET_ITEM(args, 1);
-        if (filename == Py_None || PyTuple_GET_ITEM(args, 2) != Py_None) {
+        PyObject *filename = PyTuple_GetItem(args, 1);
+        if (filename == Py_None || PyTuple_GetItem(args, 2) != Py_None) {
             return 0;
         }
-        return check_extension(PyTuple_GET_ITEM(args, 0), filename);
+        return check_extension(PyTuple_GetItem(args, 0), filename);
     }
     if (strcmp(event, LPC_PROBE_EVENT) == 0) {
         return answer_probe(args, kind);

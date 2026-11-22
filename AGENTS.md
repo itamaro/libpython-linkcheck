@@ -37,6 +37,21 @@ Keep this guide current: any commit that changes a workflow documented here
 - C style: `.clang-format` (checked by `make lint`). Test builds compile the
   C code with `-Wall -Wextra -Wshadow -Wstrict-prototypes -Werror`.
 - Supported: CPython 3.12 (oldest) through 3.15 (newest), Linux/ELF.
+- Wheel matrix (x86_64 and aarch64, `manylinux_2_28`; `setup.py` picks the
+  target from the build interpreter, `[tool.cibuildwheel]` builds one per
+  row, `ci/check_dist.py` and `ci/check_abi.py` enforce it):
+
+  | Wheel tag | Built on | C target | Extension file | Serves |
+  | --- | --- | --- | --- | --- |
+  | `cp312-abi3` | 3.12 | Limited API, `Py_LIMITED_API=0x030C0000`, `PyInit__native` | `_native.abi3.so` | GIL-enabled 3.12+ (pip prefers the 3.15 wheel on 3.15+) |
+  | `cp314-cp314t` | 3.14t | full API, `PyInit__native` | `_native.cpython-314t-<arch>-linux-gnu.so` | free-threaded 3.14 |
+  | `cp315-abi3.abi3t` | 3.15t | abi3t, `Py_TARGET_ABI3T=0x030F0000`, `PyModExport__native` (PEP 793) | `_native.abi3t-<arch>-linux-gnu.so` | GIL-enabled and free-threaded 3.15+ |
+  | `py3-none-any` | any | none (pure Python) | none | everything else |
+
+  The C code chooses APIs and slots with `LPC_TARGET_API` (the Limited API
+  floor, else the headers' version), never the headers' version alone, so
+  newer headers cannot add newer dependencies to a Stable ABI build.
+  Building the 3.15 wheel needs setuptools >= 84.2.1 (`build-system.requires`).
   Tests must cover the oldest and newest supported versions.
 - License: MIT (`LICENSE`). Build backend: setuptools (PEP 517, `pyproject.toml`).
 - The version lives in `src/libpython_linkcheck/_version.py`. Between
@@ -92,7 +107,7 @@ All targets work from a fresh checkout. Every target exits non-zero on failure.
 | `make test-linux PACKAGE=wheelhouse` | Same, against a directory of wheels: pip installs the one matching each container's interpreter (`--no-index --only-binary`). |
 | `make bench-linux` | The audit-hook overhead benchmark (`ci/bench_hook.py`, via `ci/run-tests.sh` with `LINKCHECK_BENCH=1`) in `python:<ver>-trixie` containers (`BENCH_PYTHONS="3.12 3.15"`): ns per unrelated audit event, per filename-less `import` event, and per clean extension re-import, with no hook, the pure-Python hook, and the C hook. Accepts `PACKAGE` like `test-linux`. Run it before and after changes to the hook's hot path and report both. |
 | `make dist` | `ci/build-dist.sh`: build the sdist, then the pure-Python wheel from the sdist (`LIBPYTHON_LINKCHECK_PURE=1`), `twine check --strict`, `ci/check_dist.py` content/metadata checks, and install-and-import smoke tests of each artifact from outside the checkout (installing the sdist compiles the C implementation). Also builds the `autoenable/` wheel into a scratch directory, checks it (`ci/check_autoenable.py`), and checks that installing it enables the hook at startup. |
-| `make wheels` | Native wheels for the host architecture into `wheelhouse/`: cibuildwheel (pinned in the `wheels` dependency group, configured in `[tool.cibuildwheel]`) in Podman builds each CPython in `manylinux_2_28`, runs `auditwheel show`/`repair --only-plat --plat manylinux_2_28_<arch>`, and runs `ci/wheel_smoke.py` (native implementation, `_native` has no libpython `DT_NEEDED`, the GIL stays disabled on free-threaded builds, the hook blocks a synthetic linked object). On an Apple silicon Mac this builds aarch64; CI builds x86_64 too. |
+| `make wheels` | Native wheels for the host architecture into `wheelhouse/`: cibuildwheel (pinned in the `wheels` dependency group, configured in `[tool.cibuildwheel]`) in Podman builds the three wheels of the matrix in `manylinux_2_28`, runs `auditwheel show`/`repair --only-plat --plat manylinux_2_28_<arch>`, audits each with `ci/check_abi.py` (every imported CPython symbol is in the Stable ABI of the wheel's Python tag, per CPython's pinned `Misc/stable_abi.toml`; no `PySys_AddAuditHook`; the right entry point; abi3audit `--strict` on `cp312-abi3`), and runs `ci/wheel_smoke.py` (native implementation, `_native` has no libpython `DT_NEEDED`, the GIL stays disabled on free-threaded builds, the hook blocks a synthetic linked object). On an Apple silicon Mac this builds aarch64; CI builds x86_64 too. |
 | `make check` | `lint` + `test` + `test-linux` + `dist`. |
 | `make verify-pypi VERSION=<v>` | Post-release: install `<v>` from production PyPI in fresh containers and run the README demo. |
 
@@ -142,11 +157,12 @@ pure-Python wheel.
   - `build`: the sdist and pure-Python wheel (`ci/build-dist.sh`);
   - `wheels`: native manylinux_2_28 wheels for x86_64 and aarch64
     (cibuildwheel; same configuration as `make wheels`);
-  - `check`: `twine check --strict` and `ci/check_dist.py --native-wheels`
-    on all files together (exactly one native wheel per CPython build and
-    architecture in `[tool.cibuildwheel]`, one pure wheel, one sdist, no
-    libpython `DT_NEEDED` in any shipped object), then upload them as the
-    `dist` artifact;
+  - `check`: `twine check --strict`, `ci/check_dist.py --native-wheels`
+    on all files together (exactly the wheel matrix above for both
+    architectures, with its WHEEL tags, `Root-Is-Purelib: false` and
+    extension file names, one pure wheel, one sdist, no libpython
+    `DT_NEEDED` in any shipped object), and `ci/check_abi.py` on every
+    native wheel, then upload them as the `dist` artifact;
   - `test`: the Linux suite against those exact files: the native wheel on
     3.12–3.15 × x86_64/aarch64, and the pure wheel and the sdist on 3.12 and
     3.15;

@@ -1,5 +1,7 @@
 [build-system]
-requires = ["setuptools>=77"]
+# 84.2.1: abi3t extensions and abi3.abi3t wheels (PEP 803), with the
+# suffix fix for free-threaded 3.13/3.14.
+requires = ["setuptools>=84.2.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -36,7 +38,7 @@ Issues = "https://github.com/itamaro/libpython-linkcheck/issues"
 [dependency-groups]
 test = ["pytest==9.2.0"]
 lint = ["ruff==0.17.6", "clang-format==23.1.5", "zizmor==1.32.0"]
-dist = ["build==1.6.1", "twine==7.0.0"]
+dist = ["build==1.6.1", "twine==7.0.0", "abi3audit==0.0.26"]
 wheels = ["cibuildwheel==4.3.5"]
 dev = [
     { include-group = "test" },
@@ -56,20 +58,22 @@ namespaces = false
 libpython_linkcheck = ["py.typed"]
 
 [tool.cibuildwheel]
-# Native wheels: manylinux_2_28 for every supported CPython, including the
-# free-threaded builds. Other platforms (macOS, musl, ...) use the pure-Python
-# wheel. See "Native wheels" in AGENTS.md.
-build = [
-    "cp312-manylinux_*",
-    "cp313-manylinux_*",
-    "cp314-manylinux_*",
-    "cp314t-manylinux_*",
-    "cp315-manylinux_*",
-    "cp315t-manylinux_*",
-]
+# Native wheels: manylinux_2_28, three per architecture, covering every
+# supported CPython (setup.py picks the ABI from the build interpreter):
+#   cp312   -> cp312-abi3        GIL-enabled 3.12 and later
+#   cp314t  -> cp314-cp314t      free-threaded 3.14
+#   cp315t  -> cp315-abi3.abi3t  GIL-enabled and free-threaded 3.15 and later
+# Other platforms (macOS, musl, ...) use the pure-Python wheel. See the wheel
+# matrix in AGENTS.md.
+build = ["cp312-manylinux_*", "cp314t-manylinux_*", "cp315t-manylinux_*"]
 build-frontend = "build"
 environment = { CFLAGS = "-Werror" }
 test-command = "python {project}/ci/wheel_smoke.py {project}"
+# abi3audit does not know abi3t (it reports PEP 793's PyModExport__native as
+# a non-abi3 symbol). ci/check_abi.py checks every native wheel against its
+# tag's Stable ABI floor, and runs abi3audit on the cp312-abi3 wheel.
+audit-requires = ["abi3audit==0.0.26"]
+audit-command = "python {project}/ci/check_abi.py {wheel}"
 
 [tool.cibuildwheel.linux]
 manylinux-x86_64-image = "manylinux_2_28"

@@ -7,6 +7,16 @@
 
 #include <Python.h>
 
+/* The C API version the including file may rely on: the Limited API floor
+   when building for the Stable ABI (Py_TARGET_ABI3T sets Py_LIMITED_API
+   too), else the headers' own version. Choose APIs and slots with this, so
+   that newer headers never add newer dependencies to a Stable ABI build. */
+#if defined(Py_LIMITED_API)
+#define LPC_TARGET_API (Py_LIMITED_API + 0)
+#else
+#define LPC_TARGET_API PY_VERSION_HEX
+#endif
+
 /* Name of the audit event used to ask whether a hook is installed. Each
    hook appends (kind, category) to the list passed as its only argument. */
 #define LPC_PROBE_EVENT "libpython_linkcheck.probe"

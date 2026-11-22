@@ -1,11 +1,18 @@
 /*
  * libpython_linkcheck._native: the C implementation used by the package
  * when available. The pure-Python modules remain as a fallback.
+ *
+ * setup.py builds it for one of three targets, all from this source:
+ *   - abi3, Py_LIMITED_API=0x030C0000 (GIL-enabled CPython 3.12+);
+ *   - the full API of free-threaded 3.14 (cp314t);
+ *   - abi3t, Py_TARGET_ABI3T=0x030F0000 (GIL-enabled and free-threaded
+ *     CPython 3.15+), which needs the PEP 793 export hook.
  */
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
 #include <errno.h>
+#include <string.h>
 
 #include "linkcheck_elf.h"
 #include "linkcheck_hook.h"
@@ -23,12 +30,19 @@ native_read_needed(PyObject *Py_UNUSED(module), PyObject *path)
     if (!PyUnicode_FSConverter(path, &encoded)) {
         return NULL;
     }
+    /* Fetched with the thread state attached; `encoded` owns the buffer and
+       stays alive while the reader runs without it. */
+    const char *fspath = PyBytes_AsString(encoded);
+    if (fspath == NULL) {
+        Py_DECREF(encoded);
+        return NULL;
+    }
     lpc_needed needed;
     const char *detail = NULL;
     lpc_status st;
     int saved_errno;
     Py_BEGIN_ALLOW_THREADS
-        st = lpc_read_needed(PyBytes_AS_STRING(encoded), &needed, &detail);
+        st = lpc_read_needed(fspath, &needed, &detail);
         saved_errno = errno;
     Py_END_ALLOW_THREADS
     Py_DECREF(encoded);
@@ -79,9 +93,10 @@ native_is_libpython(PyObject *Py_UNUSED(module), PyObject *name)
     if (!PyUnicode_FSConverter(name, &encoded)) {
         return NULL;
     }
-    int result = lpc_is_libpython(PyBytes_AS_STRING(encoded));
+    const char *s = PyBytes_AsString(encoded);
+    int result = s == NULL ? -1 : lpc_is_libpython(s);
     Py_DECREF(encoded);
-    return PyBool_FromLong(result);
+    return result < 0 ? NULL : PyBool_FromLong(result);
 }
 
 PyDoc_STRVAR(audit_hook_doc, "audit_hook(event, args, /)\n--\n\n"
@@ -94,7 +109,7 @@ native_audit_hook(PyObject *Py_UNUSED(module), PyObject *const *args, Py_ssize_t
         PyErr_SetString(PyExc_TypeError, "audit_hook(event: str, args: tuple)");
         return NULL;
     }
-    const char *event = PyUnicode_AsUTF8(args[0]);
+    const char *event = PyUnicode_AsUTF8AndSize(args[0], NULL);
     if (event == NULL || lpc_audit(event, args[1], "native") < 0) {
         return NULL;
     }
@@ -118,9 +133,37 @@ static PyMethodDef native_methods[] = {
     {NULL, NULL, 0, NULL},
 };
 
+#define MODULE_NAME "libpython_linkcheck._native"
+#define MODULE_DOC "C implementation of libpython-linkcheck."
+
+#if defined(Py_LIMITED_API) && LPC_TARGET_API >= 0x030F0000
+/* Stable ABI 3.15+ (abi3t, and the abi3 subset it implies): PEP 793 export
+   hook. The ABI declaration lets the interpreter reject a mismatched build
+   instead of crashing. */
+PyABIInfo_VAR(abi_info);
+
+static PySlot native_slots[] = {
+    PySlot_STATIC_DATA(Py_mod_abi, &abi_info),
+    PySlot_STATIC_DATA(Py_mod_name, MODULE_NAME),
+    PySlot_STATIC_DATA(Py_mod_doc, MODULE_DOC),
+    PySlot_STATIC_DATA(Py_mod_methods, native_methods),
+    PySlot_DATA(Py_mod_multiple_interpreters, Py_MOD_PER_INTERPRETER_GIL_SUPPORTED),
+    PySlot_DATA(Py_mod_gil, Py_MOD_GIL_NOT_USED),
+    PySlot_END,
+};
+
+PyMODEXPORT_FUNC
+PyModExport__native(void)
+{
+    return native_slots;
+}
+
+#else
+/* abi3 for 3.12 and the full API (3.14t): multi-phase PyInit. The slot
+   values are those of the targeted version (the headers pick them). */
 static PyModuleDef_Slot native_slots[] = {
     {Py_mod_multiple_interpreters, Py_MOD_PER_INTERPRETER_GIL_SUPPORTED},
-#if PY_VERSION_HEX >= 0x030D0000
+#if LPC_TARGET_API >= 0x030D0000
     {Py_mod_gil, Py_MOD_GIL_NOT_USED},
 #endif
     {0, NULL},
@@ -128,8 +171,8 @@ static PyModuleDef_Slot native_slots[] = {
 
 static struct PyModuleDef native_module = {
     .m_base = PyModuleDef_HEAD_INIT,
-    .m_name = "libpython_linkcheck._native",
-    .m_doc = "C implementation of libpython-linkcheck.",
+    .m_name = MODULE_NAME,
+    .m_doc = MODULE_DOC,
     .m_size = 0,
     .m_methods = native_methods,
     .m_slots = native_slots,
@@ -140,3 +183,4 @@ PyInit__native(void)
 {
     return PyModuleDef_Init(&native_module);
 }
+#endif
