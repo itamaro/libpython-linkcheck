@@ -18,6 +18,21 @@ DOC_SUFFIX = ".cpython-315-x86_64-linux-gnu.so"
 DOC_SONAME = "libpython3.15.so.1.0"
 
 
+def interpreter_config_tool() -> Path:
+    """python<ver>-config for the interpreter running the tests.
+
+    It sits next to the real (base) executable. sysconfig's BINDIR is where
+    the interpreter was built for, which a relocated build such as
+    python-build-standalone does not live in (e.g. /install/bin).
+    """
+    name = f"python{sysconfig.get_config_var('LDVERSION')}-config"
+    base = getattr(sys, "_base_executable", None) or sys.executable
+    for directory in (Path(os.path.realpath(base)).parent, sysconfig.get_config_var("BINDIR")):
+        if directory and (Path(directory) / name).is_file():
+            return Path(directory) / name
+    raise AssertionError(f"no {name} next to {base} or in BINDIR")
+
+
 def fenced_block_after(text: str, marker: str) -> str:
     start = text.index(marker)
     m = re.compile(r"^```[a-z]*\n(.*?)^```$", re.M | re.S).search(text, start)
@@ -44,9 +59,7 @@ def test_readme_demo(tmp_path):
     # build).
     bindir = tmp_path / "bin"
     bindir.mkdir()
-    config = Path(sysconfig.get_config_var("BINDIR")) / (
-        f"python{sysconfig.get_config_var('LDVERSION')}-config"
-    )
+    config = interpreter_config_tool()
     # A wrapper, not a symlink: the script derives its prefix from $0.
     wrapper = bindir / "python3-config"
     wrapper.write_text(f'#!/bin/sh\nexec {shlex.quote(str(config))} "$@"\n')

@@ -14,7 +14,7 @@ CLANG_FORMAT ?= uv run --isolated --only-group lint clang-format
 ZIZMOR ?= uv run --isolated --only-group lint zizmor
 C_SOURCES = $(wildcard src/csrc/*.[ch] tests/fixtures/*.c tests/native/*.c)
 
-.PHONY: help check lint format test test-linux test-linux-freethreaded dist wheels verify-pypi clean
+.PHONY: help check lint format test test-linux test-linux-freethreaded test-linux-uv-python dist wheels verify-pypi clean
 
 help:
 	@echo "make lint        Ruff lint + format check, clang-format check"
@@ -23,6 +23,7 @@ help:
 	@echo "make test-linux  Run the required Linux suite in Podman ($(LINUX_PYTHONS))"
 	@echo "make dist        Build sdist + wheel, twine check, smoke-test both"
 	@echo "make check       lint + test + test-linux + dist"
+	@echo "make test-linux-uv-python  Linux suite on uv-managed (python-build-standalone) CPythons (UV_PYTHONS)"
 	@echo "make test-linux-freethreaded  Linux suite on a free-threaded CPython built from source (FT_PYTHON=3.15)"
 	@echo "make wheels      Build + repair native manylinux wheels for this machine's arch (cibuildwheel + Podman)"
 	@echo "make verify-pypi VERSION=x  Install x from PyPI in fresh containers, run the README demo"
@@ -68,6 +69,22 @@ test-linux-freethreaded:
 		-v linkcheck-pip-cache:/root/.cache/pip \
 		$(LINUX_IMAGE):$(FT_PYTHON)-$(LINUX_VARIANT) \
 		sh /src/ci/test-freethreaded.sh
+
+# The Linux suite on uv-managed CPython builds (python-build-standalone:
+# statically linked executable, shipped shared libpython, relocatable prefix).
+# Keep UV_PYTHONS in sync with the uv-python job in .github/workflows/ci.yml.
+UV_PYTHONS ?= 3.11.18 3.12.16 3.15.2
+test-linux-uv-python:
+	@set -e; for v in $(UV_PYTHONS); do \
+	    echo "=== Linux tests: uv-managed CPython $$v ==="; \
+	    $(PODMAN) run --rm --pull=missing \
+	        -e LINKCHECK_REQUIRE_LINUX=1 -e UV_PYTHON=$$v \
+	        -e PACKAGE=$(if $(PACKAGE),/src/$(PACKAGE)) \
+	        -v "$(CURDIR)":/src:ro \
+	        -v linkcheck-pip-cache:/root/.cache/pip \
+	        -v linkcheck-uv-cache:/root/.cache/uv \
+	        $(LINUX_IMAGE):3.15-$(LINUX_VARIANT) sh /src/ci/test-uv-python.sh; \
+	done
 
 # Native wheels for the host architecture into wheelhouse/ (CI builds both).
 CIBUILDWHEEL ?= uv run --isolated --only-group wheels cibuildwheel

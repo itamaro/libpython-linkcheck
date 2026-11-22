@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Tested on uv-managed CPython (python-build-standalone) 3.11, 3.12 and
+  3.15, whose executable is linked statically although a shared libpython
+  ships alongside.
 - A `-W` / `PYTHONWARNINGS` entry naming `libpython_linkcheck.LibpythonLinkWarning`
   that CPython dropped at startup is now applied with the precedence of its
   position: later options, and filters the program installed before

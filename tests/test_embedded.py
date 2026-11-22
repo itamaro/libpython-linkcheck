@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sysconfig
 from pathlib import Path
 
 import pytest
@@ -25,7 +26,17 @@ CATEGORY = "libpython_linkcheck.LibpythonLinkWarning"
 
 @pytest.fixture(scope="session")
 def launcher(tmp_path_factory) -> Path:
-    return build_launcher(tmp_path_factory.mktemp("launcher"))
+    """The launcher, in a <prefix>/bin next to the interpreter's <prefix>/lib.
+
+    A distribution installs its `python` inside its own prefix, and CPython
+    locates the standard library relative to the executable. A relocatable
+    build (python-build-standalone) has no usable compiled-in prefix to
+    fall back on, so a launcher anywhere else would not find it.
+    """
+    prefix = tmp_path_factory.mktemp("prefix")
+    (prefix / "bin").mkdir()
+    (prefix / "lib").symlink_to(sysconfig.get_config_var("LIBDIR"))
+    return build_launcher(prefix / "bin")
 
 
 @pytest.fixture

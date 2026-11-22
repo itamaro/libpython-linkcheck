@@ -196,8 +196,11 @@ def test_is_not_libpython(impl, name):
 # --- real objects, checked against binutils' readelf ---------------------------------------
 
 
-def real_objects() -> list[str]:
-    candidates = [sys.executable]
+def real_objects(exts) -> list[str]:
+    """Objects to compare with readelf: this suite's fixtures plus whatever the
+    running interpreter provides (which varies with how it was built)."""
+    candidates = [str(ext.path) for ext in exts]
+    candidates.append(sys.executable)
     libdir = sysconfig.get_config_var("LIBDIR") or ""
     for name in (sysconfig.get_config_var("INSTSONAME"), "libpython3.so"):
         if name:
@@ -213,18 +216,24 @@ def real_objects() -> list[str]:
 
 
 @pytest.mark.skipif(not IS_LINUX, reason="real ELF objects are only available on Linux")
-def test_matches_readelf_on_real_objects(impl):
+def test_matches_readelf_on_real_objects(impl, exts):
     assert shutil.which("readelf"), "readelf (binutils) is required for the Linux suite"
-    objects = real_objects()
-    assert len(objects) >= 3, objects
+    objects = real_objects(exts)
+    assert len(objects) >= 4, objects  # the three fixtures and the interpreter
     for path in objects:
         assert impl.read_needed(path) == readelf_needed(path), path
 
 
 @pytest.mark.skipif(not IS_LINUX, reason="real ELF objects are only available on Linux")
-def test_real_interpreter_links_libpython_when_shared():
-    """Sanity check of the oracle on the test images (--enable-shared builds)."""
-    if not sysconfig.get_config_var("Py_ENABLE_SHARED"):
-        pytest.skip("interpreter is not an --enable-shared build")
-    soname = sysconfig.get_config_var("INSTSONAME")
-    assert soname in libpython_dependencies(os.path.realpath(sys.executable))
+def test_real_interpreter_linkage_matches_readelf():
+    """The running interpreter, whichever way it is linked.
+
+    Py_ENABLE_SHARED only says a shared libpython was built: Debian's and
+    the python:<ver> images' executables link it, python-build-standalone's
+    are linked statically and ship the shared library for embedders. readelf
+    on the actual executable decides; the linked fixture is the positive
+    control (test_linux_extensions.py).
+    """
+    exe = os.path.realpath(sys.executable)
+    expected = [n for n in readelf_needed(exe) if os.path.basename(n).startswith("libpython")]
+    assert libpython_dependencies(exe) == expected
