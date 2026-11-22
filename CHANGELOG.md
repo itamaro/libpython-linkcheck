@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.0 (2026-11-21)
+
+The same code as 1.0.0rc1, for both `libpython-linkcheck` and
+`libpython-linkcheck-autoenable`.
+
 ## 1.0.0rc1 (2026-11-21)
 
 First release candidate for 1.0.0.

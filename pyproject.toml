@@ -15,7 +15,7 @@ requires-python = ">=3.12"
 authors = [{ name = "Itamar Oren" }]
 keywords = ["libpython", "elf", "dt_needed", "extension", "audit-hook", "linker"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
