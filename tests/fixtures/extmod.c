@@ -50,9 +50,7 @@ static PyMethodDef methods[] = {
 };
 
 static PyModuleDef_Slot slots[] = {
-#if PY_VERSION_HEX >= 0x030C0000
     {Py_mod_multiple_interpreters, Py_MOD_PER_INTERPRETER_GIL_SUPPORTED},
-#endif
 #if PY_VERSION_HEX >= 0x030D0000
     {Py_mod_gil, Py_MOD_GIL_NOT_USED},
 #endif

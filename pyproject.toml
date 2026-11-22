@@ -9,7 +9,7 @@ description = "Warn when an imported Python extension directly links to libpytho
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 authors = [{ name = "Itamar Oren" }]
 keywords = ["libpython", "elf", "dt_needed", "extension", "audit-hook", "linker"]
 classifiers = [
@@ -18,7 +18,6 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
@@ -61,7 +60,6 @@ libpython_linkcheck = ["py.typed"]
 # free-threaded builds. Other platforms (macOS, musl, ...) use the pure-Python
 # wheel. See "Native wheels" in AGENTS.md.
 build = [
-    "cp311-manylinux_*",
     "cp312-manylinux_*",
     "cp313-manylinux_*",
     "cp314-manylinux_*",
@@ -93,7 +91,7 @@ filterwarnings = ["error"]
 
 [tool.ruff]
 line-length = 99
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF", "PT", "PL", "C4", "PIE", "RET"]

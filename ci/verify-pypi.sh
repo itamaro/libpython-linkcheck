@@ -4,13 +4,13 @@
 # README's "Try it" block, checking its key results.
 #
 # Usage: VERSION=0.1.0a1 ci/verify-pypi.sh   (or: make verify-pypi VERSION=...)
-# Environment: PODMAN (default podman), PYTHONS (default "3.11 3.15").
+# Environment: PODMAN (default podman), PYTHONS (default "3.12 3.15").
 set -eu
 
 : "${VERSION:?set VERSION, e.g. VERSION=0.1.0a1}"
 repo=$(cd "$(dirname "$0")/.." && pwd)
 podman=${PODMAN:-podman}
-pythons=${PYTHONS:-3.11 3.15}
+pythons=${PYTHONS:-3.12 3.15}
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/linkcheck-verify.XXXXXX")
 trap 'rm -rf "$work"' EXIT INT TERM

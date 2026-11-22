@@ -20,7 +20,7 @@ description = "Enable libpython-linkcheck automatically at interpreter startup"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = ["libpython-linkcheck==0.1.0a3.dev0"]
 
 [tool.hatch.build.targets.wheel]

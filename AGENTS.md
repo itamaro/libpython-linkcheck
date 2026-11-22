@@ -34,7 +34,7 @@ Keep this guide current: any commit that changes a workflow documented here
   (`LIBPYTHON_LINKCHECK_IMPLEMENTATION=python` forces the pure one).
 - C style: `.clang-format` (checked by `make lint`). Test builds compile the
   C code with `-Wall -Wextra -Wshadow -Wstrict-prototypes -Werror`.
-- Supported: CPython 3.11 (oldest) through 3.15 (newest), Linux/ELF.
+- Supported: CPython 3.12 (oldest) through 3.15 (newest), Linux/ELF.
   Tests must cover the oldest and newest supported versions.
 - License: MIT (`LICENSE`). Build backend: setuptools (PEP 517, `pyproject.toml`).
 - The version lives in `src/libpython_linkcheck/_version.py`. Between
@@ -82,10 +82,10 @@ All targets work from a fresh checkout. Every target exits non-zero on failure.
 | `make lint` | `ruff check`, `ruff format --check`, `clang-format --dry-run --Werror` on all C sources, and `zizmor --offline` on `.github/workflows` (versions pinned in the `lint` group of `pyproject.toml`) |
 | `make format` | Apply Ruff fixes and formatting |
 | `make test` | Native run on this machine: fresh venv, install the package, pytest. `PYTHON=python3.15 make test` to pick an interpreter. Linux-only tests skip on macOS. |
-| `make test-linux` | **The required Linux suite.** Runs `ci/run-tests.sh` inside `python:<ver>-trixie` containers for the oldest and newest supported Python (`LINUX_PYTHONS="3.11 3.15"`). Builds the C fixtures inside the container. Sets `LINKCHECK_REQUIRE_LINUX=1`, which turns any skipped test into a failure. |
+| `make test-linux` | **The required Linux suite.** Runs `ci/run-tests.sh` inside `python:<ver>-trixie` containers for the oldest and newest supported Python (`LINUX_PYTHONS="3.12 3.15"`). Builds the C fixtures inside the container. Sets `LINKCHECK_REQUIRE_LINUX=1`, which turns any skipped test into a failure. |
 | `make test-linux LINUX_PYTHONS=3.13` | Same, for specific versions. |
 | `make test-linux PACKAGE=dist/<file>` | Run the Linux suite against a built wheel or sdist instead of the source tree. |
-| `make test-linux-uv-python` | The Linux suite on uv-managed CPython builds from python-build-standalone (`UV_PYTHONS="3.11.18 3.12.16 3.15.2"`), whose executable is linked statically although a shared libpython ships alongside, in a relocatable prefix. `ci/test-uv-python.sh` installs the pinned uv (which pins and verifies the downloads) in a `python:3.15-trixie` container and runs `ci/run-tests.sh` with that interpreter. |
+| `make test-linux-uv-python` | The Linux suite on uv-managed CPython builds from python-build-standalone (`UV_PYTHONS="3.12.16 3.15.2"`), whose executable is linked statically although a shared libpython ships alongside, in a relocatable prefix. `ci/test-uv-python.sh` installs the pinned uv (which pins and verifies the downloads) in a `python:3.15-trixie` container and runs `ci/run-tests.sh` with that interpreter. |
 | `make test-linux-freethreaded` | The Linux suite on a free-threaded CPython (`FT_PYTHON=3.15` by default; also `3.14`): `ci/test-freethreaded.sh` builds the image's exact CPython release with `--disable-gil --enable-shared` from the python.org tarball, verified against the image's `PYTHON_SHA256` (`ci/build-freethreaded.sh`), caches it in the `linkcheck-python-ft` volume (the first run takes about 10 minutes), and checks that importing the package keeps the GIL disabled. Accepts `PACKAGE` like `test-linux`. |
 | `make test-linux PACKAGE=wheelhouse` | Same, against a directory of wheels: pip installs the one matching each container's interpreter (`--no-index --only-binary`). |
 | `make dist` | `ci/build-dist.sh`: build the sdist, then the pure-Python wheel from the sdist (`LIBPYTHON_LINKCHECK_PURE=1`), `twine check --strict`, `ci/check_dist.py` content/metadata checks, and install-and-import smoke tests of each artifact from outside the checkout (installing the sdist compiles the C implementation). Also builds the `autoenable/` wheel into a scratch directory, checks it (`ci/check_autoenable.py`), and checks that installing it enables the hook at startup. |
@@ -128,12 +128,12 @@ pure-Python wheel.
 - `lint`: `make lint` (Ruff, clang-format, zizmor).
 - `linux`: the required Linux suite (`ci/run-tests.sh`,
   `LINKCHECK_REQUIRE_LINUX=1`) in `python:<ver>-trixie` containers for
-  3.11–3.15 on x86_64, plus 3.11 and 3.15 on aarch64.
+  3.12–3.15 on x86_64, plus 3.12 and 3.15 on aarch64.
 - `uv-python`: the same suite on uv-managed (python-build-standalone)
-  CPython 3.11.18, 3.12.16 and 3.15.2 (x86_64).
+  CPython 3.12.16 and 3.15.2 (x86_64).
 - `freethreaded`: the same suite on free-threaded 3.14t and 3.15t
   (`ci/test-freethreaded.sh`; the source build is cached with `actions/cache`).
-- `macos`: native test run on 3.11 and 3.15.
+- `macos`: native test run on 3.12 and 3.15.
 - `dist` (reusable `.github/workflows/dist.yml`), which builds every
   distribution once:
   - `build`: the sdist and pure-Python wheel (`ci/build-dist.sh`);
@@ -145,7 +145,7 @@ pure-Python wheel.
     libpython `DT_NEEDED` in any shipped object), then upload them as the
     `dist` artifact;
   - `test`: the Linux suite against those exact files: the native wheel on
-    3.11–3.15 × x86_64/aarch64, and the pure wheel and the sdist on 3.11 and
+    3.12–3.15 × x86_64/aarch64, and the pure wheel and the sdist on 3.12 and
     3.15;
   - `test-freethreaded`: the cp314t and cp315t native wheels on free-threaded
     builds (x86_64; aarch64 is covered locally by `make wheels` +
@@ -185,7 +185,7 @@ GitHub environment `pypi`. No API tokens are stored anywhere.
    make check
    make test-linux PACKAGE=dist/libpython_linkcheck-<version>-py3-none-any.whl
    make test-linux PACKAGE=dist/libpython_linkcheck-<version>.tar.gz
-   make wheels && make test-linux PACKAGE=wheelhouse LINUX_PYTHONS="3.11 3.12 3.13 3.14 3.15"
+   make wheels && make test-linux PACKAGE=wheelhouse LINUX_PYTHONS="3.12 3.13 3.14 3.15"
    make test-linux-freethreaded PACKAGE=wheelhouse FT_PYTHON=3.14
    make test-linux-freethreaded PACKAGE=wheelhouse FT_PYTHON=3.15
    ```
@@ -204,7 +204,7 @@ GitHub environment `pypi`. No API tokens are stored anywhere.
    `gh run download <run-id> -n dist` with
    `https://pypi.org/pypi/libpython-linkcheck/<version>/json`), then verify
    from clean containers: `make verify-pypi VERSION=<version>` installs the
-   release from production PyPI (no mounts, no cache) on 3.11 and 3.15 and
+   release from production PyPI (no mounts, no cache) on 3.12 and 3.15 and
    runs the README "Try it" block.
 7. Post-release commit: bump `_version.py` and `autoenable/pyproject.toml`
    to the next `.dev0` version and open a new "Unreleased" section in

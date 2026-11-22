@@ -46,7 +46,7 @@ def run_in_subinterpreter(code):
     try:
         import _interpreters as interpreters  # 3.13+
     except ImportError:
-        import _xxsubinterpreters as interpreters  # 3.11, 3.12
+        import _xxsubinterpreters as interpreters  # 3.12
     interp = interpreters.create()
     try:
         interpreters.run_string(interp, code)

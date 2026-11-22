@@ -129,7 +129,7 @@ before activation, including by `.pth` files processed earlier, are not
 inspected.
 
 `libpython-linkcheck-autoenable` is not on PyPI; build it from the
-repository with `python -m build --wheel autoenable`. On Python 3.11–3.14 its
+repository with `python -m build --wheel autoenable`. On Python 3.12–3.14 its
 `.pth` file's import line calls `enable()`; on 3.15 and later the matching
 [PEP 829](https://peps.python.org/pep-0829/) `.start` file
 (`libpython_linkcheck:enable`) does, and disables that import line.
@@ -215,11 +215,11 @@ exit status 1
 
 Supported and tested:
 
-- CPython 3.11 through 3.15 on Linux (x86_64 and aarch64, glibc), and the
+- CPython 3.12 through 3.15 on Linux (x86_64 and aarch64, glibc), and the
   free-threaded builds of 3.14 and 3.15. Importing and enabling the
   package keeps the GIL disabled.
 - Distributions: native `manylinux_2_28` wheels (x86_64, aarch64) for
-  CPython 3.11–3.15 and free-threaded 3.14t/3.15t, which use the C
+  CPython 3.12–3.15 and free-threaded 3.14t/3.15t, which use the C
   implementation; a pure-Python `py3-none-any` wheel for every other
   platform; and an sdist, which compiles the C implementation on POSIX.
 - Every activation path in [the table above](#activating-it-automatically),

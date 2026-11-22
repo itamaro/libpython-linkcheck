@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- Tested on uv-managed CPython (python-build-standalone) 3.11, 3.12 and
-  3.15, whose executable is linked statically although a shared libpython
+- Python 3.11 is no longer supported; the minimum is 3.12.
+- Tested on uv-managed CPython (python-build-standalone) 3.12 and 3.15, whose executable is linked statically although a shared libpython
   ships alongside.
 - A `-W` / `PYTHONWARNINGS` entry naming `libpython_linkcheck.LibpythonLinkWarning`
   that CPython dropped at startup is now applied with the precedence of its

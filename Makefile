@@ -3,7 +3,7 @@
 PYTHON ?= python3
 PODMAN ?= podman
 # Oldest and newest supported CPython; CI also runs everything in between.
-LINUX_PYTHONS ?= 3.11 3.15
+LINUX_PYTHONS ?= 3.12 3.15
 LINUX_IMAGE ?= docker.io/library/python
 LINUX_VARIANT ?= trixie
 # Optional: a wheel or sdist (relative to the repo root) to test instead of
@@ -73,7 +73,7 @@ test-linux-freethreaded:
 # The Linux suite on uv-managed CPython builds (python-build-standalone:
 # statically linked executable, shipped shared libpython, relocatable prefix).
 # Keep UV_PYTHONS in sync with the uv-python job in .github/workflows/ci.yml.
-UV_PYTHONS ?= 3.11.18 3.12.16 3.15.2
+UV_PYTHONS ?= 3.12.16 3.15.2
 test-linux-uv-python:
 	@set -e; for v in $(UV_PYTHONS); do \
 	    echo "=== Linux tests: uv-managed CPython $$v ==="; \

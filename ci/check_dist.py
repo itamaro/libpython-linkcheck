@@ -37,7 +37,7 @@ SDIST_REQUIRED_TOP = [
     "PKG-INFO",
 ]
 #: CPython builds and architectures that get a native wheel ([tool.cibuildwheel]).
-NATIVE_PYTHONS = ["cp311", "cp312", "cp313", "cp314", "cp314t", "cp315", "cp315t"]
+NATIVE_PYTHONS = ["cp312", "cp313", "cp314", "cp314t", "cp315", "cp315t"]
 NATIVE_ARCHES = ["x86_64", "aarch64"]
 NATIVE_TAG = re.compile(r"(cp3\d+)-(cp3\d+t?)-manylinux_2_28_(x86_64|aarch64)")
 SDIST_FORBIDDEN_PREFIXES = [".github/", ".git/", "CLAUDE.md", "AGENTS.md", "Makefile", "ci/"]
@@ -71,7 +71,7 @@ def check_metadata(raw: bytes, version: str, where: str) -> None:
     expected = {
         "Name": DIST_NAME,
         "Version": version,
-        "Requires-Python": ">=3.11",
+        "Requires-Python": ">=3.12",
         "License-Expression": "MIT",
     }
     for key, value in expected.items():
