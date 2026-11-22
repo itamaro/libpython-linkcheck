@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 from extbuild import IS_LINUX, Exts
-from pyrun import Result, Venv, impl_env, make_venv, package_parent, run_python
+from pyrun import STARTUP_NOTICE, Result, Venv, impl_env, make_venv, package_parent, run_python
 
 pytestmark = pytest.mark.skipif(not IS_LINUX, reason="activation is tested on Linux")
 
@@ -83,6 +83,44 @@ def test_sitecustomize_with_category_filter_on_the_command_line(run, venv, hook_
     (venv.site_packages / "sitecustomize.py").write_text(CUSTOMIZE)
     r = run(REPORT_AND_IMPORT, "-W", "error::libpython_linkcheck.LibpythonLinkWarning")
     assert_blocked(r, [hook_impl])
+
+
+CATEGORY = "libpython_linkcheck.LibpythonLinkWarning"
+
+
+@pytest.mark.parametrize("startup", ["resolved", "dropped"])
+@pytest.mark.parametrize(
+    "flags",
+    [
+        ("-W", "ignore", "-W", f"error::{CATEGORY}"),
+        # The module field is anchored as this CPython anchors it (\Z, or \z on 3.14+).
+        ("-W", "ignore:::__main__", "-W", f"error::{CATEGORY}"),
+        ("-W", f"error::{CATEGORY}:__main__", "-W", "ignore::UserWarning:__main__"),
+        # A /regex/ message (3.15+; earlier versions match it literally).
+        ("-W", "ignore", "-W", f"error:/^extension module /:{CATEGORY}"),
+    ],
+    ids=["ignore", "ignore-main", "error-main", "message-regex"],
+)
+def test_sitecustomize_keeps_option_precedence(run, venv, exts, hook_impl, *, flags, startup):
+    """From site no program code has run, so a recovered entry gets the
+    precedence of its position, exactly as when CPython resolves it at startup."""
+    (venv.site_packages / "sitecustomize.py").write_text(CUSTOMIZE)
+    env = {}
+    if startup == "resolved":
+        env["PYTHONPATH"] = f"{package_parent()}:{exts.dir}"
+    r = run(REPORT_AND_IMPORT, *flags, env=env)
+    assert (STARTUP_NOTICE in r.stderr.splitlines()) is (startup == "dropped"), r.stderr
+    if "/" in flags[-1] and sys.version_info < (3, 15):
+        assert r.returncode == 0, r.stderr
+        assert (r.stdout, r.ctor) == (f"{[hook_impl]}\n", ["linked_ext"])
+    else:
+        assert_blocked(r, [hook_impl])
+
+
+def test_autoenable_recovery_keeps_option_precedence(run, venv, hook_impl):
+    install_autoenable(venv.site_packages)
+    flags = ("-W", "ignore", "-W", "error::libpython_linkcheck.LibpythonLinkWarning")
+    assert_blocked(run(REPORT_AND_IMPORT, *flags), [hook_impl])
 
 
 def test_usercustomize(exts: Exts, tmp_path, hook_impl):

@@ -10,11 +10,12 @@ dynamic loader ever mapped them.
 from __future__ import annotations
 
 import shutil
+import sys
 import sysconfig
 
 import pytest
 from extbuild import IS_LINUX, Exts, readelf_needed
-from pyrun import SUBINTERPRETER_HELPER, impl_env, run_python
+from pyrun import STARTUP_NOTICE, SUBINTERPRETER_HELPER, impl_env, package_parent, run_python
 
 from libpython_linkcheck._elf import is_libpython, read_needed
 
@@ -257,14 +258,31 @@ import abi3_linked_ext
     assert r.ctor == ["linked_ext", "abi3_linked_ext"]
 
 
-# --- -W options for our category that CPython dropped at startup -------------------
+# --- -W options for our category ----------------------------------------------------
 #
 # CPython applies -W / PYTHONWARNINGS entries in order, each in front of the
-# previous ones, so the last one wins. An entry naming our category is dropped
-# at startup (site-packages is not on sys.path yet) and recovered by enable();
-# it must keep the precedence its position gives it.
+# previous ones, so the last one wins. An entry naming our category resolves
+# at startup only if the package is importable then (here: on PYTHONPATH);
+# otherwise CPython drops it and enable() recovers it. Each case runs both
+# ways ("startup" fixture). Resolved, enable() must leave the policy CPython
+# and the program established alone; dropped, it must not override filters
+# the program may have installed.
 
 IMPORT_LINKED = ENABLE + "import linked_ext\n"
+
+
+@pytest.fixture(params=["resolved", "dropped"])
+def startup(request, py):
+    """Run with the category resolved by CPython at startup, or dropped."""
+    resolved = request.param == "resolved"
+
+    def run(code, *flags):
+        r = py(code, *flags, path=[package_parent()] if resolved else [])
+        assert (STARTUP_NOTICE in r.stderr.splitlines()) is not resolved, r.stderr
+        return r
+
+    run.resolved = resolved
+    return run
 
 
 def assert_loaded_silently(r):
@@ -280,17 +298,61 @@ def assert_blocked(r):
     assert r.stderr.splitlines()[-1].startswith(f"{CATEGORY}: extension module 'linked_ext' ")
 
 
-def test_later_option_overrides_recovered_category_option(py):
-    assert_loaded_silently(py(IMPORT_LINKED, "-W", f"error::{CATEGORY}", "-W", "ignore"))
+def test_later_option_overrides_category_option(startup):
+    assert_loaded_silently(startup(IMPORT_LINKED, "-W", f"error::{CATEGORY}", "-W", "ignore"))
 
 
-def test_recovered_category_option_overrides_earlier_option(py):
-    assert_blocked(py(IMPORT_LINKED, "-W", "ignore", "-W", f"error::{CATEGORY}"))
+def test_category_option_overrides_earlier_unrelated_option(startup):
+    r = startup(IMPORT_LINKED, "-W", "ignore::UserWarning", "-W", f"error::{CATEGORY}")
+    assert_blocked(r)
+
+
+@pytest.mark.parametrize("earlier", ["ignore", "ignore:::__main__"])
+def test_earlier_overlapping_option_keeps_precedence_over_recovery(startup, earlier):
+    """Documented limit: after startup, a dropped entry cannot override an
+    earlier option that also matches the warning, because the program could
+    have installed the same filter itself (see the next test). Resolved, the
+    later option wins. (From site it does too: see test_activation.py.)"""
+    r = startup(IMPORT_LINKED, "-W", earlier, "-W", f"error::{CATEGORY}")
+    if startup.resolved:
+        assert_blocked(r)
+    else:
+        assert_loaded_silently(r)
+
+
+def test_program_filter_keeps_precedence(startup):
+    """The program's simplefilter("ignore") wins, whether or not the category
+    resolved at startup, even though it equals the earlier -W ignore."""
+    code = "import warnings\nwarnings.simplefilter('ignore')\n" + IMPORT_LINKED
+    assert_loaded_silently(startup(code, "-W", "ignore", "-W", f"error::{CATEGORY}"))
+
+
+def test_recovery_survives_catch_warnings(startup):
+    """enable() inside catch_warnings() changes only that temporary filter list."""
+    code = """
+import warnings
+import libpython_linkcheck
+with warnings.catch_warnings():
+    libpython_linkcheck.enable()
+libpython_linkcheck.enable()
+import linked_ext
+"""
+    assert_blocked(startup(code, "-W", f"error::{CATEGORY}"))
+
+
+def test_message_regex_option(startup):
+    """3.15 reads a message field enclosed in slashes as a regular expression;
+    older versions match it literally, so it never matches this warning."""
+    r = startup(IMPORT_LINKED, "-W", f"error:/^extension module /:{CATEGORY}")
+    if sys.version_info >= (3, 15):
+        assert_blocked(r)
+    else:
+        assert (r.returncode, r.ctor, len(r.link_warnings)) == (0, ["linked_ext"], 1), r.stderr
 
 
 @pytest.mark.parametrize(
     ("pythonwarnings", "blocked"),
-    [(f"error::{CATEGORY},ignore", False), (f"ignore,error::{CATEGORY}", True)],
+    [(f"error::{CATEGORY},ignore", False), (f"ignore::UserWarning,error::{CATEGORY}", True)],
 )
 def test_pythonwarnings_order_is_preserved(exts, tmp_path, hook_impl, pythonwarnings, blocked):
     r = run_python(

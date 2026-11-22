@@ -15,15 +15,23 @@
   `LibpythonLinkcheck_Install()` (its signature and behavior are unchanged).
 - Tested on uv-managed CPython (python-build-standalone) 3.12 and 3.15, whose executable is linked statically although a shared libpython
   ships alongside.
-- A `-W` / `PYTHONWARNINGS` entry naming `libpython_linkcheck.LibpythonLinkWarning`
-  that CPython dropped at startup is now applied with the precedence of its
-  position: later options, and filters the program installed before
-  `enable()`, still override it. Previously `enable()` put it in front of
-  every filter.
+- `-W` / `PYTHONWARNINGS` entries naming `libpython_linkcheck.LibpythonLinkWarning`:
+  - If CPython resolved them at startup (the package was importable then),
+    `enable()` leaves the filters alone. Previously it could move them in front
+    of filters the program had installed, such as `warnings.simplefilter("ignore")`.
+  - If CPython dropped them, `enable()` applies them once per filter list,
+    so a call inside `warnings.catch_warnings()` no longer keeps a later call
+    from applying them to the restored list. Called from site startup code
+    (the autoenable `.pth` / `.start` files, `sitecustomize`), they get the
+    precedence of their position among the options. Called later, they go
+    behind every filter equal to another startup option and every filter
+    the program added in front of those. Previously `enable()` put them in
+    front of every filter.
+  - Message and module fields are parsed as the running CPython parses them:
+    `/regex/` fields on 3.15, and the `\z` module anchor on 3.14+.
 - `enable()` also applies such entries when it finds a hook that is already
-  installed, such as one registered with `LibpythonLinkcheck_Install()`
-  (once per interpreter). The README documents which filters work with
-  the embedded hook alone.
+  installed, such as one registered with `LibpythonLinkcheck_Install()`.
+  The README documents which filters work with the embedded hook alone.
 - Recognize libpython copies bundled into wheels by auditwheel, such as
   `libpython3-dc2fd5ae.10.so.1.0` (needed by the extensions in the
   `cohere==2.1.0` cp310 wheel), and the unversioned `libpython.so`.

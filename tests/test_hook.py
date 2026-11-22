@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.machinery
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -172,13 +173,22 @@ def test_options_resolved_at_startup_are_not_duplicated(py):
     assert (r.returncode, r.stdout, r.stderr) == (0, "1\n", "")
 
 
+#: How this CPython anchors a literal module field, and reads /.../ fields.
+END = r"\z" if sys.version_info >= (3, 14) else r"\Z"
+SLASH_REGEX = sys.version_info >= (3, 15)
+SLASH_FIELDS = ("^ext", "a.*") if SLASH_REGEX else (r"/\^ext/", r"/a\.\*/" + END)
+
+
 @pytest.mark.parametrize(
     ("arg", "expected"),
     [
         (f"error::{CATEGORY}", ("error", "", "", 0)),
         (f"e::{CATEGORY}", ("error", "", "", 0)),
         (f"::{CATEGORY}", ("default", "", "", 0)),
-        (f" ignore : x.y : {CATEGORY} : a.b : 7 ", ("ignore", re.escape("x.y"), r"a\.b\Z", 7)),
+        (f" ignore : x.y : {CATEGORY} : a.b : 7 ", ("ignore", re.escape("x.y"), r"a\.b" + END, 7)),
+        (f"error:/^ext/:{CATEGORY}:/a.*/", ("error", *SLASH_FIELDS, 0)),
+        (f"error:/:{CATEGORY}:/", ("error", "/", r"/" + END, 0)),
+        (f"error:/(/:{CATEGORY}", None if SLASH_REGEX else ("error", r"/\(/", "", 0)),
         ("error::libpython_linkcheck._hook.LibpythonLinkWarning", ("error", "", "", 0)),
         (f"bogus::{CATEGORY}", None),
         (f"error::{CATEGORY}:m:-1", None),
