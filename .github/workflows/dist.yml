@@ -190,7 +190,9 @@ jobs:
           - { python: "3.14", arch: x86_64, package: by-name }
           - { python: "3.15", arch: x86_64, package: cp315-abi3.abi3t }
           - { python: "3.15", arch: x86_64, package: by-name }
-    runs-on: ubuntu-24.04
+          - { python: "3.14", arch: aarch64, package: cp314-cp314t }
+          - { python: "3.15", arch: aarch64, package: cp315-abi3.abi3t }
+    runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     container: docker.io/library/python:${{ matrix.python }}-trixie
     env:
       LINKCHECK_REQUIRE_LINUX: "1"

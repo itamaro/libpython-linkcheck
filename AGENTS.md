@@ -172,10 +172,9 @@ pure-Python wheel.
     project name on 3.12, 3.14 and 3.15 (x86_64) and 3.15 (aarch64), the
     `abi3-new-headers` wheel on 3.12, and the pure wheel and the sdist on
     3.12 and 3.15;
-  - `test-freethreaded`: on free-threaded 3.14t and 3.15t (x86_64), the
-    `cp314-cp314t` and `cp315-abi3.abi3t` wheels as files and the set by
-    project name (aarch64 is covered locally by `make wheels` +
-    `make test-linux-freethreaded PACKAGE=wheelhouse`).
+  - `test-freethreaded`: on free-threaded 3.14t and 3.15t, the
+    `cp314-cp314t` and `cp315-abi3.abi3t` wheels as files on x86_64 and
+    aarch64, and the set by project name on x86_64.
 
   `ci/run-tests.sh` fails unless the installed WHEEL tags are the expected
   ones: a wheel file's own; for a directory, the matrix wheel for that
