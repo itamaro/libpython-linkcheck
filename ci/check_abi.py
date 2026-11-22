@@ -11,6 +11,8 @@ and the CI `check` job runs it on every wheel. For each shared object:
   CPython's Misc/stable_abi.toml (pinned below). The Python tag is the
   floor: an abi3 build for 3.12 must not use a function added in 3.13, even
   when compiled with newer headers.
+- ``cpXY-abi3`` with X.Y < 3.15: the extension is named ``*.abi3.so``, the
+  only Stable ABI suffix those versions import.
 - Every native wheel: no PySys_AddAuditHook (the embedder entry point,
   src/csrc/linkcheck_embed.c, is not part of the extension), and the only
   exported CPython symbol is the module's entry point: PyModExport__native
@@ -118,6 +120,10 @@ def check_wheel(wheel: Path, abi_symbols: dict[str, tuple[int, int]]) -> None:
             own = sorted(s for s in exported if CPYTHON_SYMBOL.match(s))
             if own != [entry]:
                 fail(f"{wheel.name}: {name} exports {own}, expected [{entry!r}]")
+            # CPython accepts the platform-qualified .abi3-<platform>.so only
+            # from 3.15; earlier versions load .abi3.so.
+            if abi == "abi3" and floor < (3, 15) and not name.endswith(".abi3.so"):
+                fail(f"{wheel.name}: CPython {floor[0]}.{floor[1]} cannot import {name}")
             if limited:
                 outside = [s for s in imported if s not in abi_symbols]
                 newer = [s for s in imported if s in abi_symbols and abi_symbols[s] > floor]

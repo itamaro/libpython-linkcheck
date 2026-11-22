@@ -16,10 +16,12 @@ The build interpreter selects the ABI (see ``native_target``):
 """
 
 import os
+import re
 import sys
 import sysconfig
 
 from setuptools import Extension, setup
+from setuptools.command.build_ext import build_ext
 
 CSRC = "src/csrc"
 
@@ -35,6 +37,22 @@ def native_target() -> str:
     if sysconfig.get_config_var("Py_GIL_DISABLED"):
         return "abi3t" if sys.version_info >= (3, 15) else "full"
     return "abi3"
+
+
+class BuildExt(build_ext):
+    """Name an abi3 extension ``.abi3.so``, which every CPython 3.12+ loads.
+
+    Building with 3.15 or later, setuptools uses that interpreter's
+    platform-qualified suffix (``.abi3-x86_64-linux-gnu.so``), which CPython
+    only accepts from 3.15 on: the cp312-abi3 wheel would not load on
+    3.12-3.14. (abi3t needs 3.15 anyway, so its suffix stays.)
+    """
+
+    def get_ext_filename(self, fullname: str) -> str:
+        filename = super().get_ext_filename(fullname)
+        if native_target() == "abi3":
+            filename = re.sub(r"\.abi3-[^./]+\.so$", ".abi3.so", filename)
+        return filename
 
 
 def ext_modules(target: str) -> list[Extension]:
@@ -67,4 +85,4 @@ else:
     target = native_target()
     limited = TARGETS[target][1]
     options = {"bdist_wheel": {"py_limited_api": limited}} if limited else {}
-    setup(ext_modules=ext_modules(target), options=options)
+    setup(ext_modules=ext_modules(target), options=options, cmdclass={"build_ext": BuildExt})
