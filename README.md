@@ -105,7 +105,11 @@ Where a recovered entry goes depends on how the hook is enabled:
   program code, so the entry gets the precedence its position gives it,
   exactly as if CPython had applied it:
   `-W ignore -W error::libpython_linkcheck.LibpythonLinkWarning` makes the
-  warning an error.
+  warning an error. This assumes nothing changed the filters before them:
+  `.pth` and `.start` files that are processed earlier (from earlier site
+  directories, or sorting before `libpython_linkcheck_autoenable`) can run
+  code, and a filter one of them installed is indistinguishable from a
+  `-W` option's.
 - Any other `enable()` call (including from `sitecustomize`) may come after
   code that installed filters of its own, and the filter list cannot tell
   `warnings.simplefilter("ignore")` from the `ignore` filter `-W ignore`
@@ -117,9 +121,13 @@ Where a recovered entry goes depends on how the hook is enabled:
 
 The first `enable()` call in an interpreter applies the entries, to the
 filter list in effect and, inside `warnings.catch_warnings()`, also to the
-list that block restores. Later calls never add them again, so a program
-that removes them (for example with `warnings.resetwarnings()`) keeps that
-policy. The other forms in the table work without this step.
+interpreter's original list, which the outermost block restores. Later calls
+never add them again, so a program that removes them (for example with
+`warnings.resetwarnings()`) keeps that policy. If that first call is inside
+nested `catch_warnings()` blocks, the lists the inner blocks restore on exit
+(other than the original) do not get the entries, so they are not in effect
+until the outermost block exits. The other forms in the table work without
+this step.
 
 ### Checking files without importing them
 

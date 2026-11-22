@@ -17,7 +17,8 @@ It installs two files at the root of `site-packages`:
 `_autoenable()` is `enable()`, except that a dropped
 `-W error::libpython_linkcheck.LibpythonLinkWarning` keeps the precedence of
 its position among the `-W` options (see "Controlling the warning" in the
-main README). Its version must equal the package's, which the dependency pins.
+main README), as long as no `.pth` or `.start` file processed before it
+changed the warning filters. Its version must equal the package's, which the dependency pins.
 
 It does nothing under `-S` (no `site`), and it cannot inspect extension
 modules imported by `.pth` files that are processed before it.
