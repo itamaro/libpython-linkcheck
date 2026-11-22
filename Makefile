@@ -14,7 +14,7 @@ CLANG_FORMAT ?= uv run --isolated --only-group lint clang-format
 ZIZMOR ?= uv run --isolated --only-group lint zizmor
 C_SOURCES = $(wildcard src/csrc/*.[ch] tests/fixtures/*.c tests/native/*.c)
 
-.PHONY: help check lint format test test-linux test-linux-freethreaded test-linux-uv-python dist wheels verify-pypi clean
+.PHONY: help check lint format test test-linux test-linux-freethreaded test-linux-uv-python bench-linux dist wheels verify-pypi clean
 
 help:
 	@echo "make lint        Ruff lint + format check, clang-format check"
@@ -23,6 +23,7 @@ help:
 	@echo "make test-linux  Run the required Linux suite in Podman ($(LINUX_PYTHONS))"
 	@echo "make dist        Build sdist + wheel, twine check, smoke-test both"
 	@echo "make check       lint + test + test-linux + dist"
+	@echo "make bench-linux       audit-hook overhead benchmark in Linux containers (BENCH_PYTHONS)"
 	@echo "make test-linux-uv-python  Linux suite on uv-managed (python-build-standalone) CPythons (UV_PYTHONS)"
 	@echo "make test-linux-freethreaded  Linux suite on a free-threaded CPython built from source (FT_PYTHON=3.15)"
 	@echo "make wheels      Build + repair native manylinux wheels for this machine's arch (cibuildwheel + Podman)"
@@ -49,6 +50,18 @@ test-linux:
 	    echo "=== Linux tests: $(LINUX_IMAGE):$$v-$(LINUX_VARIANT) ==="; \
 	    $(PODMAN) run --rm --pull=missing \
 	        -e LINKCHECK_REQUIRE_LINUX=1 \
+	        -e PACKAGE=$(if $(PACKAGE),/src/$(PACKAGE)) \
+	        -v "$(CURDIR)":/src:ro \
+	        -v linkcheck-pip-cache:/root/.cache/pip \
+	        $(LINUX_IMAGE):$$v-$(LINUX_VARIANT) sh /src/ci/run-tests.sh; \
+	done
+
+# The audit-hook overhead benchmark (ci/bench_hook.py), same install as test-linux.
+BENCH_PYTHONS ?= 3.12 3.15
+bench-linux:
+	@set -e; for v in $(BENCH_PYTHONS); do \
+	    echo "=== Hook benchmark: $(LINUX_IMAGE):$$v-$(LINUX_VARIANT) ==="; \
+	    $(PODMAN) run --rm --pull=missing -e LINKCHECK_BENCH=1 \
 	        -e PACKAGE=$(if $(PACKAGE),/src/$(PACKAGE)) \
 	        -v "$(CURDIR)":/src:ro \
 	        -v linkcheck-pip-cache:/root/.cache/pip \

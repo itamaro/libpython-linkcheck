@@ -17,6 +17,9 @@
 #                            defaults to 0 when PACKAGE is a pure-Python wheel
 #   CFLAGS                   extra C flags; -Werror is always added when the
 #                            C extension is compiled from source
+#   LINKCHECK_BENCH          set to 1 to run ci/bench_hook.py (the hook overhead
+#                            benchmark) against the installed package instead of
+#                            pytest
 #
 # Extra arguments are passed to pytest. The exit status is pytest's.
 set -eu
@@ -93,5 +96,9 @@ EOF
 # Under set -e a failing pytest exits the shell with pytest's status, and the
 # trap preserves it.
 cd "$work/src"
-# --basetemp keeps pytest's tmp_path directories inside $work as well.
-"$venv_python" -P -m pytest -p no:cacheprovider --basetemp "$work/pytest" tests "$@"
+if [ "${LINKCHECK_BENCH:-0}" = 1 ]; then
+    "$venv_python" -P ci/bench_hook.py
+else
+    # --basetemp keeps pytest's tmp_path directories inside $work as well.
+    "$venv_python" -P -m pytest -p no:cacheprovider --basetemp "$work/pytest" tests "$@"
+fi
