@@ -91,10 +91,10 @@ On the command line:
 during startup, before site-packages is on `sys.path`. For a normally
 installed package that fails, and CPython itself prints
 `Invalid -W option ignored: invalid module name: 'libpython_linkcheck'`.
-`enable()` applies those dropped entries, so the filter takes effect for
-every import after `enable()`; an entry CPython did resolve (the package was
-importable at startup, for example on `PYTHONPATH`) is left exactly where
-CPython and the program put it. Options later on the command line still
+The first `enable()` call recovers dropped entries as described below.
+Entries CPython resolved at startup (the package was importable then, for
+example on `PYTHONPATH`) retain the precedence set by CPython and the
+application. Options later on the command line still
 override a recovered entry
 (`-W error::libpython_linkcheck.LibpythonLinkWarning -W ignore` ignores the
 warning), and `PYTHONWARNINGS` entries still come before `-W` options.
