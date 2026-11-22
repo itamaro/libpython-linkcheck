@@ -152,8 +152,8 @@ int main(int argc, char **argv) {
 }
 ```
 
-Compile `src/csrc/linkcheck_hook.c` and `src/csrc/linkcheck_elf.c` (from the
-sdist or the repository) into the program, with `src/csrc` on the include
+Compile `src/csrc/linkcheck_embed.c`, `src/csrc/linkcheck_hook.c` and
+`src/csrc/linkcheck_elf.c` (from the sdist or the repository) into the program, with `src/csrc` on the include
 path; the program links libpython as embedders do. The warning category is
 the same `libpython_linkcheck.LibpythonLinkWarning` that the package
 exposes, and a later `libpython_linkcheck.enable()` call detects the hook

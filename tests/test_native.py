@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 from elfbuild import DT_SONAME, ElfSpec, build_elf
-from extbuild import IS_LINUX, compiler
+from extbuild import IS_LINUX, compiler, readelf_dynamic_symbols
 
 from libpython_linkcheck import _elf
 
@@ -103,6 +103,20 @@ def test_corpus_exercises_every_outcome(corpus):
 @native
 def test_native_is_the_default_implementation():
     assert _elf.IMPLEMENTATION == "native"
+
+
+@native
+@pytest.mark.skipif(not IS_LINUX, reason="readelf inspects ELF objects")
+def test_extension_does_not_register_a_runtime_hook():
+    """The embedder entry point (linkcheck_embed.c) is not part of _native.
+
+    The extension installs its hook per interpreter with sys.addaudithook();
+    PySys_AddAuditHook() is not part of the Limited API.
+    """
+    defined, undefined = readelf_dynamic_symbols(_elf._native.__file__)
+    assert "PyUnicode_FSConverter" in undefined  # readelf sees the C API imports
+    assert "PySys_AddAuditHook" not in undefined
+    assert "LibpythonLinkcheck_Install" not in defined
 
 
 @native

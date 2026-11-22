@@ -30,6 +30,22 @@ def readelf_needed(path: str | Path) -> list[str]:
     return re.findall(r"\(NEEDED\)\s+Shared library: \[(.*)\]", out)
 
 
+def readelf_dynamic_symbols(path: str | Path) -> tuple[set[str], set[str]]:
+    """(defined, undefined) dynamic symbol names without versions, according to readelf."""
+    out = subprocess.run(
+        ["readelf", "--dyn-syms", "--wide", str(path)], capture_output=True, text=True, check=True
+    ).stdout
+    defined: set[str] = set()
+    undefined: set[str] = set()
+    for line in out.splitlines():
+        fields = line.split()
+        # Num: Value Size Type Bind Vis Ndx Name
+        if len(fields) >= 8 and fields[0].endswith(":"):
+            name = fields[7].split("@")[0]
+            (undefined if fields[6] == "UND" else defined).add(name)
+    return defined, undefined
+
+
 class BuildError(RuntimeError):
     pass
 
@@ -103,8 +119,9 @@ def build_fixtures(outdir: Path) -> Exts:
 def build_launcher(outdir: Path) -> Path:
     """Build tests/fixtures/launcher.c: a `python` that registers the embedded hook.
 
-    It compiles src/csrc/linkcheck_hook.c and linkcheck_elf.c into the
-    executable, exactly as an embedder would, and links the shared libpython.
+    It compiles src/csrc/linkcheck_embed.c, linkcheck_hook.c and
+    linkcheck_elf.c into the executable, exactly as an embedder would, and
+    links the shared libpython.
     """
     cfg = sysconfig.get_config_vars()
     if not cfg.get("Py_ENABLE_SHARED"):
@@ -123,6 +140,7 @@ def build_launcher(outdir: Path) -> Path:
         f"-I{sysconfig.get_paths()['include']}",
         f"-I{CSRC}",
         str(LAUNCHER_SRC),
+        str(CSRC / "linkcheck_embed.c"),
         str(CSRC / "linkcheck_hook.c"),
         str(CSRC / "linkcheck_elf.c"),
         "-o",

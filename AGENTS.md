@@ -27,7 +27,9 @@ Keep this guide current: any commit that changes a workflow documented here
     built (the `py3-none-any` wheel) and the oracle for differential tests.
   `linkcheck_hook.[ch]` is the audit hook in C, shared by `_native` (the hook
   `enable()` installs) and the embedder entry point declared in
-  `libpython_linkcheck.h`.
+  `libpython_linkcheck.h`. That entry point (`LibpythonLinkcheck_Install()`,
+  which calls `PySys_AddAuditHook()`) lives in `linkcheck_embed.c`, which only
+  embedders compile; `_native` must not link it.
   Any behavior change must be made in both; `tests/test_native.py` compares
   the readers on a fuzzed corpus, in-process and in an ASan/UBSan-built
   harness, and the subprocess behavior tests run once per implementation

@@ -6,9 +6,11 @@
  * module before it is loaded, from the very start of the runtime and without
  * importing any Python package.
  *
- * Build: compile these three files into the program, which links libpython:
+ * Build: compile these files into the program, which links libpython, with
+ * src/csrc on the include path:
  *
- *     src/csrc/linkcheck_hook.c   (includes Python.h)
+ *     src/csrc/linkcheck_embed.c  (this entry point; full C API)
+ *     src/csrc/linkcheck_hook.c   (the hook logic shared with the package)
  *     src/csrc/linkcheck_elf.c    (plain C99 + POSIX)
  *     src/csrc/linkcheck_elf.h, linkcheck_hook.h, libpython_linkcheck.h
  *
