@@ -18,7 +18,9 @@ Keep this guide current: any commit that changes a workflow documented here
   pair, built and checked by `make dist` into `autoenable-dist/`; its
   version, and its exact dependency on the core, are kept equal to
   `_version.py`),
-  `ci/` (scripts shared by `make` and GitHub Actions), `.github/workflows/`.
+  `ci/` (scripts shared by `make` and GitHub Actions), `.github/workflows/`,
+  `docs/` (not shipped; `docs/survey/` is the write-up of the survey of
+  public wheels that link extensions to libpython).
 - Two implementations of the same behavior:
   - C (`src/csrc/`): `linkcheck_elf.[ch]` is plain
     C99 + POSIX (no `Python.h`) so embedders can compile it;
